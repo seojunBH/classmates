@@ -1,3 +1,4 @@
+import 'package:classmates/attendance.dart';
 import 'package:classmates/notification.dart';
 import 'package:flutter/material.dart';
 
@@ -11,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: const rules(),
+      home: const attendance(),
       routes: {
         '/notification':(context)=>const notification(),
         '/rules':(context)=>const rules(),

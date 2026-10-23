@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+//전체 공지화면 앱바
 class notification_bar extends StatelessWidget
     implements PreferredSizeWidget {
   const notification_bar({super.key});
@@ -47,7 +48,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/notification');
+              Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -59,7 +60,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/notification');
+              Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -75,6 +76,7 @@ class notification_bar extends StatelessWidget
   }
 } //+) 네비게이터 고치기
 
+//가정통신문 공지 한 블록
 class notification_card extends StatelessWidget {
   final String title;
   final String content;
@@ -87,28 +89,31 @@ class notification_card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: MediaQuery.of(context).size.width * 0.8,
-      height: 150,
-      color: const Color.fromARGB(255, 212, 211, 211),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,),
-              SizedBox(height: 30,),
-              Text(content.length > 40 ? '${content.substring(0, 40)}...' : content,),
-            ],
-          ),
-        ],
+    return Center(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.8,
+        height: 150,
+        color: const Color.fromARGB(255, 212, 211, 211),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,),
+                SizedBox(height: 30,),
+                Text(content.length > 100 ? '${content.substring(0, 100)}...' : content,),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
-}
+} //+) 추가기능 추가
 
+//가정통신문 공지 전체 화면
 class notification extends StatefulWidget {
   const notification({super.key});
 
@@ -124,15 +129,16 @@ class _notificationState extends State<notification> {
         body: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            Center(child: notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' )),
-            Center(child: notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' )),
-            Center(child: notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' )),
+            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
+            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
+            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
           ],
         ),
     );
   }
-} // +) 권리자에게는 공지 추가 기능 있어야 함
+} // +) 권리자에게는 공지 추가 기능 있어야 함, +) 플러스 알파 기능 추가, +) 카드 지금은 3개 임의 지정이지만 이후엔 추가하는 대로 되도록
 
+// 규칙 전체 화면 (이후에 백엔드 작업 후에 규칙 적용하면 됨)
 class rules extends StatefulWidget {
   const rules({super.key});
 
@@ -165,5 +171,5 @@ class _rulesState extends State<rules> {
         ),
     );
   }
-}
+} //+) 피그마에 있던 아래 블록 아직 미구현
 

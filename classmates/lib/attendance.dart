@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 // ─────────────────────────────────────────────
 // 데이터 모델 (이후 백엔드 연동 시 교체)
@@ -49,9 +50,26 @@ class Student {
       records[dateOnly(day)] ?? <AttendanceEvent>[];
 
   void addEvent(DateTime day, AttendanceEvent e) {
-    records.putIfAbsent(dateOnly(day), () => []).add(e);
+    final list = records.putIfAbsent(dateOnly(day), () => []);
+    // 같은 종류(입실/퇴실)이면서 시간이 정확히 같은 기록은 나중에 추가된 것만 남김
+    list.removeWhere((old) => old.isIn == e.isIn && old.minutes == e.minutes);
+    list.add(e);
     isPresent = e.isIn;
   }
+}
+
+/// 날짜/시간 선택 도구를 한국어로 표시 (MaterialApp 설정과 무관하게 동작)
+Widget koreanLocalized(BuildContext context, Widget? child) {
+  return Localizations.override(
+    context: context,
+    locale: const Locale('ko', 'KR'),
+    delegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    child: child ?? const SizedBox.shrink(),
+  );
 }
 
 DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -305,6 +323,10 @@ class _StudentDetailPopupState extends State<_StudentDetailPopup> {
       initialDate: selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
+      builder: koreanLocalized,
+      helpText: '날짜 선택',
+      cancelText: '취소',
+      confirmText: '확인',
     );
     if (picked != null) setState(() => selectedDate = dateOnly(picked));
   }
@@ -367,18 +389,27 @@ class _StudentDetailPopupState extends State<_StudentDetailPopup> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _pickDate,
-                    style: TextButton.styleFrom(
-                      backgroundColor: kPurpleLight,
-                      foregroundColor: Colors.black87,
-                      shape: const StadiumBorder(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: Text('출석 기록',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
                     ),
-                    icon: const Icon(Icons.calendar_month, size: 18),
-                    label: Text(fmtDate(selectedDate)),
-                  ),
+                    TextButton.icon(
+                      onPressed: _pickDate,
+                      style: TextButton.styleFrom(
+                        backgroundColor: kPurpleLight,
+                        foregroundColor: Colors.black87,
+                        shape: const StadiumBorder(),
+                      ),
+                      icon: const Icon(Icons.calendar_month, size: 18),
+                      label: Text(fmtDate(selectedDate)),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 _AttendanceTimeline(events: events),
@@ -531,6 +562,10 @@ class _AttendanceFormPopupState extends State<_AttendanceFormPopup> {
       context: context,
       initialTime: _time ?? TimeOfDay.now(),
       initialEntryMode: TimePickerEntryMode.dial, // 시계(다이얼) 형태
+      builder: koreanLocalized,
+      helpText: '시간 선택',
+      cancelText: '취소',
+      confirmText: '확인',
     );
     if (picked != null) setState(() => _time = picked);
   }

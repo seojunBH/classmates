@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: const schedule(),
+      home: const notification(),
       routes: {
         '/notification':(context)=>const notification(),
         '/rules':(context)=>const rules(),

@@ -48,7 +48,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
+              // Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -60,7 +60,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/schedule'); //네비게이션 아직 미수정
+              Navigator.pushNamed(context, '/schedule');
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -590,34 +590,49 @@ class _scheduleState extends State<schedule> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (holiday != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(holiday,
-                    style: const TextStyle(
-                        color: _holidayColor, fontWeight: FontWeight.bold)),
-              ),
-            for (final it in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
+            // 일정이 많아 화면을 넘어가면 이 영역(날짜 제목 아래)만 스크롤됨
+            // (일정이 적을 때는 기존처럼 내용 크기에 맞는 시트 그대로)
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _typeColor(it.type),
-                        shape: BoxShape.circle,
+                    if (holiday != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(holiday,
+                            style: const TextStyle(
+                                color: _holidayColor,
+                                fontWeight: FontWeight.bold)),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text('[${_typeName(it.type)}] ${it.title}'),
+                    for (final it in items)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: _typeColor(it.type),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                  '[${_typeName(it.type)}] ${it.title}'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (holiday == null && items.isEmpty)
+                      const Text('등록된 일정이 없습니다.',
+                          style: TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),
-            if (holiday == null && items.isEmpty)
-              const Text('등록된 일정이 없습니다.',
-                  style: TextStyle(color: Colors.black54)),
+            ),
           ],
         ),
       ),

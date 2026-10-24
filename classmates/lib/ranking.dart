@@ -1,0 +1,866 @@
+import 'package:flutter/material.dart';
+// NEIS 사이트 열기 기능을 켤 때 아래 import의 주석을 풀고 pubspec.yaml에 url_launcher를 추가하세요.
+// import 'package:url_launcher/url_launcher.dart';
+
+// ─────────────────────────────────────────────
+// 데이터 모델 (이후 백엔드 연동 시 교체)
+// ─────────────────────────────────────────────
+
+/// 사용자 프로필 (API/BC 등으로 정보 수정 가능)
+class UserProfileData {
+  final String studentId;
+  final String name;
+  final String tier;
+  final String? avatarUrl;
+  final String? avatarAsset;
+
+  const UserProfileData({
+    required this.studentId,
+    required this.name,
+    required this.tier,
+    this.avatarUrl,
+    this.avatarAsset,
+  });
+}
+
+/// 랭킹 기록 한 건 (학번 + 랭킹 점수)
+class RankingRecord {
+  final String userId;
+  final num rankingScore;
+
+  const RankingRecord({
+    required this.userId,
+    required this.rankingScore,
+  });
+}
+
+// ─────────────────────────────────────────────
+// 색상 / 상수
+// ─────────────────────────────────────────────
+
+const Color purple = Color(0xFF7252A5);
+const Color palePurple = Color(0xFFF3EEF7);
+const Color cardGray = Color(0xFFD9D9D9);
+const Color inputGray = Color(0xFFE9E4EC);
+
+/// 상위 몇 %인지 계산 (기록이 없거나 내 기록이 없으면 null)
+int? calculateTopPercent({
+  required String userId,
+  required List<RankingRecord> records,
+}) {
+  if (records.isEmpty) return null;
+
+  RankingRecord? currentRecord;
+  for (final record in records) {
+    if (record.userId == userId) {
+      currentRecord = record;
+      break;
+    }
+  }
+
+  if (currentRecord == null) return null;
+
+  final usersAhead = records.where(
+    (record) => record.rankingScore > currentRecord!.rankingScore,
+  ).length;
+  final rank = usersAhead + 1;
+  final percent = ((rank / records.length) * 100).ceil();
+
+  return percent.clamp(1, 100).toInt();
+}
+
+// 티어 이미지: assets/ranks/ 폴더에 png를 추가하고 pubspec.yaml의 assets에 등록해야 표시됩니다.
+const Map<String, String> tierImageAssets = {
+  '브론즈': 'assets/ranks/bronze.png',
+  '실버': 'assets/ranks/silver.png',
+  '골드': 'assets/ranks/gold.png',
+  '플래티넘': 'assets/ranks/platinum.png',
+  '다이아': 'assets/ranks/diamond.png',
+  '마스터': 'assets/ranks/master.png',
+};
+
+// ─────────────────────────────────────────────
+// 성적 랭크 메인 화면
+// ─────────────────────────────────────────────
+
+class RankingBoardPage extends StatefulWidget {
+  final UserProfileData? initialUser;
+  final List<RankingRecord> initialRankingRecords;
+
+  const RankingBoardPage({
+    super.key,
+    this.initialUser,
+    this.initialRankingRecords = const [],
+  });
+
+  @override
+  State<RankingBoardPage> createState() => _RankingBoardPageState();
+}
+
+class _RankingBoardPageState extends State<RankingBoardPage> {
+  late UserProfileData _user;
+  late List<RankingRecord> _rankingRecords;
+
+  @override
+  void initState() {
+    super.initState();
+    // init information
+    _user = widget.initialUser ?? const UserProfileData(
+      studentId: '20400',
+      name: '홍길동',
+      tier: '골드',
+    );
+    _rankingRecords = List<RankingRecord>.from(widget.initialRankingRecords);
+  }
+
+  @override
+  void didUpdateWidget(covariant RankingBoardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialUser != null && oldWidget.initialUser != widget.initialUser) {
+      _user = widget.initialUser!;
+    }
+    if (!identical(oldWidget.initialRankingRecords, widget.initialRankingRecords)) {
+      _rankingRecords = List<RankingRecord>.from(widget.initialRankingRecords);
+    }
+  }
+
+  int? get _topPercent => calculateTopPercent(
+        userId: _user.studentId,
+        records: _rankingRecords,
+      );
+
+  Future<void> _openScoreRegistration() async {
+    final submitted = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ScoreRegistrationPage(),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (submitted == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('성적 입력이 완료되었습니다.')),
+      );
+    }
+  }
+
+  void _openTutorial() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NeisTutorialPage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('성적 랭크'),
+        backgroundColor: const Color.fromARGB(255, 212, 211, 211),
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      SizedBox(height: screenHeight * 0.12),
+
+                      ProfileRankCard(
+                        user: _user,
+                        topPercent: _topPercent,
+                      ),
+
+                      SizedBox(height: screenHeight * 0.12),
+
+                      const Text(
+                        '성적을 입력하세요.',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _PillButton(
+                        label: '성적 입력',
+                        onPressed: _openScoreRegistration,
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      const Text(
+                        '성적을 확인하려면?',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _PillButton(
+                        label: 'NEIS 튜토리얼',
+                        onPressed: _openTutorial,
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 프로필 + 티어 + 상위 % 카드
+class ProfileRankCard extends StatelessWidget {
+  final UserProfileData user;
+  final int? topPercent;
+
+  const ProfileRankCard({
+    super.key,
+    required this.user,
+    required this.topPercent,
+  });
+
+  Widget _profileFallback() {
+    return const CircleAvatar(
+      radius: 22,
+      backgroundColor: Color(0xFFEBDDFA),
+      child: Icon(Icons.person_outline, color: purple, size: 30),
+    );
+  }
+
+  Widget _buildProfileAvatar() {
+    if (user.avatarAsset != null && user.avatarAsset!.isNotEmpty) {
+      return ClipOval(
+        child: Image.asset(
+          user.avatarAsset!,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _profileFallback(),
+        ),
+      );
+    }
+
+    if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          user.avatarUrl!,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _profileFallback(),
+        ),
+      );
+    }
+
+    return _profileFallback();
+  }
+
+  Widget _buildTierImage() {
+    final assetPath = tierImageAssets[user.tier];
+
+    if (assetPath == null) {
+      return const Icon(
+        Icons.workspace_premium_rounded,
+        color: Color(0xFFC4BCCB),
+        size: 30,
+      );
+    }
+
+    return Image.asset(
+      assetPath,
+      width: 38,
+      height: 38,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const Icon(
+        Icons.workspace_premium_rounded,
+        color: Color(0xFFC4BCCB),
+        size: 30,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final percentText = topPercent == null
+        ? '랭킹 집계 중'
+        : '상위 ${topPercent!.toStringAsFixed(0)}%';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardGray,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildProfileAvatar(),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${user.studentId} ${user.name}',
+                  style: const TextStyle(fontSize: 17, color: Colors.black),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 48,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0EAF4),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: _buildTierImage(),
+              ),
+              const SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.tier,
+                    style: const TextStyle(
+                      fontSize: 27,
+                      height: 1.0,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFFFFD51F),
+                      shadows: [
+                        Shadow(
+                          color: Colors.black38,
+                          offset: Offset(1, 1),
+                          blurRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    percentText,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _PillButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: palePurple,
+      elevation: 1,
+      shadowColor: Colors.black12,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: purple,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// 성적 입력 화면
+// ─────────────────────────────────────────────
+
+class ScoreRegistrationPage extends StatefulWidget {
+  const ScoreRegistrationPage({super.key});
+
+  @override
+  State<ScoreRegistrationPage> createState() => _ScoreRegistrationPageState();
+}
+
+class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  String? _selectedExam;
+
+  // 요청한 시험 종류 목록
+  static const List<String> _examTypes = [
+    '1학기 중간',
+    '1학기 기말',
+    '2학기 중간',
+    '2학기 기말',
+    '3월 모의고사',
+    '5월 모의고사',
+    '6월 모의고사',
+    '7월 모의고사',
+    '9월 모의고사',
+    '10월 모의고사',
+  ];
+
+  // 프로젝트/학교에서 사용할 과목 선택지입니다.
+  // 사용 중인 과목은 추가 대화상자의 선택지에서 자동으로 제외됩니다.
+  static const List<String> _availableSubjects = [
+    '국어',
+    '수학',
+    '영어',
+    '한국사',
+    '통합사회',
+    '통합과학',
+    '정보',
+    '진로와 직업',
+    '문학',
+    '독서',
+    '화법과 작문',
+    '확률과 통계',
+    '미적분',
+    '경제',
+    '사회문화',
+    '생활과 윤리',
+    '물리학',
+    '화학',
+    '생명과학',
+    '지구과학',
+    '일본어',
+    '중국어',
+    '기타',
+  ];
+
+  final List<_ScoreEntry> _entries = [
+    _ScoreEntry('국어'),
+    _ScoreEntry('영어'),
+  ];
+
+  @override
+  void dispose() {
+    for (final entry in _entries) {
+      entry.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _addSubject() async {
+    final alreadySelected = _entries.map((entry) => entry.subject).toSet();
+    final candidates = _availableSubjects
+        .where((subject) => !alreadySelected.contains(subject))
+        .toList();
+
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('추가할 수 있는 과목이 없습니다.')),
+      );
+      return;
+    }
+
+    final selectedSubject = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return SimpleDialog(
+          title: const Text('추가할 과목을 선택하세요'),
+          children: candidates
+              .map(
+                (subject) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(dialogContext, subject),
+                  child: Text(subject),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+
+    if (!mounted || selectedSubject == null) return;
+
+    // 방어 로직: 중복 선택은 UI 선택지 필터링 외에도 한 번 더 차단합니다.
+    if (_entries.any((entry) => entry.subject == selectedSubject)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$selectedSubject 과목은 이미 추가되어 있습니다.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _entries.add(_ScoreEntry(selectedSubject));
+    });
+  }
+
+  void _removeSubject(int index) {
+    if (_entries.length <= 1) return;
+
+    setState(() {
+      final removedEntry = _entries.removeAt(index);
+      removedEntry.dispose();
+    });
+  }
+
+  void _submitScores() {
+    if (_selectedExam == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('시험 종류를 선택해 주세요.')),
+      );
+      return;
+    }
+
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    // 현재는 입력 검증과 화면 복귀까지만 수행합니다.
+    // 실제 기록 저장 시 _selectedExam과 _entries의 값을 DB/API에 저장하세요.
+    final scoreData = <String, int>{};
+    for (final entry in _entries) {
+      scoreData[entry.subject] = int.parse(entry.scoreController.text.trim());
+    }
+
+    debugPrint('시험: $_selectedExam');
+    debugPrint('성적: $scoreData');
+
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 34, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<String>(
+                  value: _selectedExam,
+                  isExpanded: true,
+                  hint: const Text(
+                    '시험 종류',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 11,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: purple, width: 1.4),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: purple, width: 1.8),
+                    ),
+                  ),
+                  items: _examTypes
+                      .map(
+                        (exam) => DropdownMenuItem<String>(
+                          value: exam,
+                          child: Text(
+                            exam,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() => _selectedExam = value);
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 28),
+
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: List.generate(_entries.length, (index) {
+                    final entry = _entries[index];
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                entry.subject,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                              const Spacer(),
+                              IconButton(
+                                onPressed: _entries.length > 1
+                                    ? () => _removeSubject(index)
+                                    : null,
+                                tooltip: '과목 삭제',
+                                icon: const Icon(Icons.close, size: 17),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                          TextFormField(
+                            controller: entry.scoreController,
+                            keyboardType: TextInputType.number,
+                            validator: (value) {
+                              final score = int.tryParse((value ?? '').trim());
+                              if (score == null || score < 0 || score > 100) {
+                                return '0~100 사이의 점수를 입력해 주세요.';
+                              }
+                              return null;
+                            },
+                            decoration: InputDecoration(
+                              labelText: '점수',
+                              hintText: 'Input',
+                              filled: true,
+                              fillColor: inputGray,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
+                              border: const UnderlineInputBorder(),
+                              enabledBorder: const UnderlineInputBorder(
+                                borderSide: BorderSide(color: Colors.black38),
+                              ),
+                              focusedBorder: const UnderlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: purple,
+                                  width: 1.5,
+                                ),
+                              ),
+                              suffixIcon: IconButton(
+                                tooltip: '점수 지우기',
+                                icon: const Icon(
+                                  Icons.cancel_outlined,
+                                  size: 16,
+                                  color: Colors.black54,
+                                ),
+                                onPressed: entry.scoreController.clear,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+              ),
+
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ElevatedButton(
+                  onPressed: _addSubject,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF383638),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text('과목 추가', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+
+              const SizedBox(height: 42),
+
+              Center(
+                child: _PillButton(
+                  label: '제출',
+                  onPressed: _submitScores,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoreEntry {
+  final String subject;
+  final TextEditingController scoreController = TextEditingController();
+
+  _ScoreEntry(this.subject);
+
+  void dispose() => scoreController.dispose();
+}
+
+// ─────────────────────────────────────────────
+// NEIS 튜토리얼 화면
+// ─────────────────────────────────────────────
+
+class NeisTutorialPage extends StatelessWidget {
+  const NeisTutorialPage({super.key});
+  // 아직 미연결: 후배가 나중에 커밋하기로 한 기능 (url_launcher 필요)
+  // Future<void> _openNeis(BuildContext context) async {
+  //   final uri = Uri.parse('https://www.neis.go.kr/');
+
+  //   try {
+  //     final opened = await launchUrl(
+  //       uri,
+  //       mode: LaunchMode.externalApplication,
+  //     );
+
+  //     if (!opened && context.mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         const SnackBar(content: Text('NEIS 사이트를 열 수 없습니다.')),
+  //       );
+  //     }
+  //   } catch (_) {
+  //     if (context.mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         const SnackBar(content: Text('사이트 연결에 실패했습니다.')),
+  //       );
+  //     }
+  //   }
+  // }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 30,
+                  minHeight: 38,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Center(child: _TutorialIllustration()),
+              const SizedBox(height: 22),
+              const Text(
+                'STEP 1. NEIS에서 성적 조회 메뉴를 찾으세요.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Center(child: _TutorialIllustration()),
+              const SizedBox(height: 22),
+              const Text(
+                'STEP 2. 확인한 성적을 앱에 입력하세요.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 42),
+              Center(
+                child: _PillButton(
+                  label: 'NEIS 이동',
+                  // onPressed: () => _openNeis(context),
+                  onPressed: () {}, // 아직 미연결 (_openNeis 주석 해제 후 위 줄로 교체)
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialIllustration extends StatelessWidget {
+  const _TutorialIllustration();
+
+  @override
+  Widget build(BuildContext context) {
+    const iconColor = Color(0xFFC9C1D0);
+
+    return Container(
+      width: 180,
+      height: 118,
+      decoration: BoxDecoration(
+        color: const Color(0xFFEDE6F1),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: const Stack(
+        children: [
+          Positioned(
+            top: 13,
+            left: 70,
+            child: Icon(
+              Icons.change_history_rounded,
+              color: iconColor,
+              size: 43,
+            ),
+          ),
+          Positioned(
+            left: 34,
+            bottom: 22,
+            child: Icon(Icons.settings, color: iconColor, size: 36),
+          ),
+          Positioned(
+            right: 34,
+            bottom: 19,
+            child: Icon(
+              Icons.crop_square_rounded,
+              color: iconColor,
+              size: 43,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

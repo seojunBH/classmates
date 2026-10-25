@@ -8,6 +8,12 @@ class notification_bar extends StatelessWidget
   @override
   Size get preferredSize => const Size.fromHeight(80);
 
+  // 현재 라우트와 같으면 이동하지 않음
+  void _go(BuildContext context, String routeName) {
+    if (ModalRoute.of(context)?.settings.name == routeName) return;
+    Navigator.pushNamed(context, routeName);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppBar(
@@ -23,9 +29,7 @@ class notification_bar extends StatelessWidget
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/notification');
-            },
+            onPressed: () => _go(context, '/notification'),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -35,9 +39,7 @@ class notification_bar extends StatelessWidget
             ),
           ),
           OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/rules');
-            },
+            onPressed: () => _go(context, '/rules'),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -48,7 +50,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              // Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
+              // _go(context, '/notification'); //네비게이션 아직 미수정
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -59,9 +61,7 @@ class notification_bar extends StatelessWidget
             ),
           ),
           OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/schedule');
-            },
+            onPressed: () => _go(context, '/schedule'),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [

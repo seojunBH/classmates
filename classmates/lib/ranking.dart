@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'bottomBar.dart';
+import 'package:flutter/services.dart'; // 숫자만 입력받는 필터용
 // NEIS 사이트 열기 기능을 켤 때 아래 import의 주석을 풀고 pubspec.yaml에 url_launcher를 추가하세요.
 // import 'package:url_launcher/url_launcher.dart';
 
@@ -43,6 +45,28 @@ const Color palePurple = Color(0xFFF3EEF7);
 const Color cardGray = Color(0xFFD9D9D9);
 const Color inputGray = Color(0xFFE9E4EC);
 
+// ─────────────────────────────────────────────
+// 데이터 불러오기 (서버 연동 자리)
+// ─────────────────────────────────────────────
+
+/// 내 프로필을 서버에서 가져오는 함수
+/// ★ 백엔드 연결 시 이 함수 안만 실제 API 호출로 교체하면 됩니다.
+Future<UserProfileData> fetchMyProfile() async {
+  // TODO: 실제 API 호출로 교체 (임시 데이터)
+  return const UserProfileData(
+    studentId: '20400',
+    name: '홍길동',
+    tier: '골드',
+  );
+}
+
+/// 전체 학생의 랭킹 기록(내 기록 포함)을 서버에서 가져오는 함수
+/// ★ 백엔드 연결 시 이 함수 안만 실제 API 호출로 교체하면 됩니다.
+Future<List<RankingRecord>> fetchRankingRecords() async {
+  // TODO: 실제 API 호출로 교체 (지금은 기록이 없으므로 항상 Unranked)
+  return const [];
+}
+
 /// 상위 몇 %인지 계산 (기록이 없거나 내 기록이 없으면 null)
 int? calculateTopPercent({
   required String userId,
@@ -84,50 +108,66 @@ const Map<String, String> tierImageAssets = {
 // ─────────────────────────────────────────────
 
 class RankingBoardPage extends StatefulWidget {
-  final UserProfileData? initialUser;
-  final List<RankingRecord> initialRankingRecords;
-
-  const RankingBoardPage({
-    super.key,
-    this.initialUser,
-    this.initialRankingRecords = const [],
-  });
+  const RankingBoardPage({super.key});
 
   @override
   State<RankingBoardPage> createState() => _RankingBoardPageState();
 }
 
 class _RankingBoardPageState extends State<RankingBoardPage> {
-  late UserProfileData _user;
-  late List<RankingRecord> _rankingRecords;
+  UserProfileData? _user; // 불러오기 전에는 null
+  List<RankingRecord> _rankingRecords = const [];
+  bool _isLoading = true; // 처음 불러오는 중인지
 
   @override
   void initState() {
     super.initState();
-    // init information
-    _user = widget.initialUser ?? const UserProfileData(
-      studentId: '20400',
-      name: '홍길동',
-      tier: '골드',
+    // 화면이 열릴 때 스스로 서버에서 데이터를 가져옴
+    _loadData();
+  }
+
+  /// 내 정보와 랭킹 기록을 서버에서 불러와 화면에 반영
+  /// showLoading: false 이면 기존 화면을 유지한 채 조용히 새로고침 (성적 제출 후 등)
+  Future<void> _loadData({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final user = await fetchMyProfile();
+      final records = await fetchRankingRecords();
+
+      if (!mounted) return; // 불러오는 사이에 화면이 닫혔으면 중단
+
+      setState(() {
+        _user = user;
+        _rankingRecords = records;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('랭킹 데이터를 불러오지 못했습니다: $e');
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      // 이미 보여줄 데이터가 있는 상태에서의 새로고침 실패는 안내만 표시
+      if (_user != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('랭킹 정보를 새로 불러오지 못했습니다.')),
+        );
+      }
+    }
+  }
+
+  int? get _topPercent {
+    final user = _user;
+    if (user == null) return null;
+
+    return calculateTopPercent(
+      userId: user.studentId,
+      records: _rankingRecords,
     );
-    _rankingRecords = List<RankingRecord>.from(widget.initialRankingRecords);
   }
-
-  @override
-  void didUpdateWidget(covariant RankingBoardPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialUser != null && oldWidget.initialUser != widget.initialUser) {
-      _user = widget.initialUser!;
-    }
-    if (!identical(oldWidget.initialRankingRecords, widget.initialRankingRecords)) {
-      _rankingRecords = List<RankingRecord>.from(widget.initialRankingRecords);
-    }
-  }
-
-  int? get _topPercent => calculateTopPercent(
-        userId: _user.studentId,
-        records: _rankingRecords,
-      );
 
   Future<void> _openScoreRegistration() async {
     final submitted = await Navigator.push<bool>(
@@ -143,6 +183,9 @@ class _RankingBoardPageState extends State<RankingBoardPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('성적 입력이 완료되었습니다.')),
       );
+
+      // 제출한 성적이 반영된 순위를 다시 불러옴
+      await _loadData(showLoading: false);
     }
   }
 
@@ -153,71 +196,103 @@ class _RankingBoardPageState extends State<RankingBoardPage> {
     );
   }
 
+  Widget _buildLoadError() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '랭킹 정보를 불러오지 못했습니다.',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PillButton(label: '다시 시도', onPressed: _loadData),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(UserProfileData user) {
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  SizedBox(height: screenHeight * 0.12),
+
+                  ProfileRankCard(
+                    user: user,
+                    topPercent: _topPercent,
+                  ),
+
+                  SizedBox(height: screenHeight * 0.12),
+
+                  const Text(
+                    '성적을 입력하세요.',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _PillButton(
+                    label: '성적 입력',
+                    onPressed: _openScoreRegistration,
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  const Text(
+                    '성적을 확인하려면?',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _PillButton(
+                    label: 'NEIS 튜토리얼',
+                    onPressed: _openTutorial,
+                  ),
+                  const SizedBox(height: 28),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
+    final user = _user;
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('성적 랭크'),
         backgroundColor: const Color.fromARGB(255, 212, 211, 211),
       ),
+      bottomNavigationBar: const bottom_bar(),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      SizedBox(height: screenHeight * 0.12),
-
-                      ProfileRankCard(
-                        user: _user,
-                        topPercent: _topPercent,
-                      ),
-
-                      SizedBox(height: screenHeight * 0.12),
-
-                      const Text(
-                        '성적을 입력하세요.',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _PillButton(
-                        label: '성적 입력',
-                        onPressed: _openScoreRegistration,
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      const Text(
-                        '성적을 확인하려면?',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _PillButton(
-                        label: 'NEIS 튜토리얼',
-                        onPressed: _openTutorial,
-                      ),
-                      const SizedBox(height: 28),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : user == null
+                ? _buildLoadError()
+                : _buildContent(user),
       ),
     );
   }
@@ -294,11 +369,57 @@ class ProfileRankCard extends StatelessWidget {
     );
   }
 
+  // 순위가 있을 때: 티어 이름 (예: 골드)
+  Widget _buildTierText() {
+    return Text(
+      user.tier,
+      style: const TextStyle(
+        fontSize: 27,
+        height: 1.0,
+        fontWeight: FontWeight.w900,
+        color: Color(0xFFFFD51F),
+        shadows: [
+          Shadow(
+            color: Colors.black38,
+            offset: Offset(1, 1),
+            blurRadius: 1,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 순위가 없을 때: 테두리만 있는 Unranked 글자
+  Widget _buildUnrankedText() {
+    const baseStyle = TextStyle(
+      fontSize: 27,
+      height: 1.0,
+      fontWeight: FontWeight.w900,
+    );
+
+    return Stack(
+      children: [
+        Text(
+          'Unranked',
+          style: baseStyle.copyWith(
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.2
+              ..color = Colors.black,
+          ),
+        ),
+        Text('Unranked', style: baseStyle.copyWith(color: cardGray)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final percentText = topPercent == null
-        ? '랭킹 집계 중'
-        : '상위 ${topPercent!.toStringAsFixed(0)}%';
+    // 순위가 없으면(topPercent == null) Unranked 로 표시하고, 퍼센트 자리에는 '랭킹 집계 중' 표시
+    final isRanked = topPercent != null;
+    final percentText = isRanked
+        ? '상위 ${topPercent!.toStringAsFixed(0)}%'
+        : '랭킹 집계 중';
 
     return Container(
       width: double.infinity,
@@ -327,36 +448,24 @@ class ProfileRankCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 48,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0EAF4),
-                  borderRadius: BorderRadius.circular(12),
+              // 순위가 있을 때만 티어 이미지 표시 (Unranked일 때는 숨김)
+              if (isRanked) ...[
+                Container(
+                  width: 48,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0EAF4),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: _buildTierImage(),
                 ),
-                alignment: Alignment.center,
-                child: _buildTierImage(),
-              ),
-              const SizedBox(width: 9),
+                const SizedBox(width: 9),
+              ],
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user.tier,
-                    style: const TextStyle(
-                      fontSize: 27,
-                      height: 1.0,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFFFFD51F),
-                      shadows: [
-                        Shadow(
-                          color: Colors.black38,
-                          offset: Offset(1, 1),
-                          blurRadius: 1,
-                        ),
-                      ],
-                    ),
-                  ),
+                  isRanked ? _buildTierText() : _buildUnrankedText(),
                   Text(
                     percentText,
                     style: const TextStyle(
@@ -406,6 +515,24 @@ class _PillButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 뒤로 가기 버튼 (성적 입력 / NEIS 튜토리얼 화면 공통 — 같은 위치, 같은 크기)
+class _BackButton extends StatelessWidget {
+  const _BackButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: () => Navigator.pop(context),
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(
+        minWidth: 30,
+        minHeight: 38,
       ),
     );
   }
@@ -469,9 +596,14 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
     '기타',
   ];
 
+  // 처음 화면에 기본으로 뜨는 과목 (이 순서대로 표시)
   final List<_ScoreEntry> _entries = [
     _ScoreEntry('국어'),
+    _ScoreEntry('수학'),
     _ScoreEntry('영어'),
+    _ScoreEntry('통합사회'),
+    _ScoreEntry('통합과학'),
+    _ScoreEntry('한국사'),
   ];
 
   @override
@@ -564,156 +696,172 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 34, 20, 24),
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String>(
-                  value: _selectedExam,
-                  isExpanded: true,
-                  hint: const Text(
-                    '시험 종류',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 11,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: purple, width: 1.4),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: purple, width: 1.8),
-                    ),
-                  ),
-                  items: _examTypes
-                      .map(
-                        (exam) => DropdownMenuItem<String>(
-                          value: exam,
-                          child: Text(
-                            exam,
-                            style: const TextStyle(fontSize: 12),
+              // 뒤로 가기 버튼: NEIS 튜토리얼 화면과 같은 위치
+              const _BackButton(),
+              const SizedBox(height: 14),
+              Padding(
+                // 기존 입력 영역의 좌우 여백(20)을 유지하기 위한 추가 여백
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 190,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedExam,
+                        isExpanded: true,
+                        hint: const Text(
+                          '시험 종류',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 11,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: purple, width: 1.4),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: purple, width: 1.8),
                           ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedExam = value);
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              Form(
-                key: _formKey,
-                child: Column(
-                  children: List.generate(_entries.length, (index) {
-                    final entry = _entries[index];
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                entry.subject,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.black,
+                        items: _examTypes
+                            .map(
+                              (exam) => DropdownMenuItem<String>(
+                                value: exam,
+                                child: Text(
+                                  exam,
+                                  style: const TextStyle(fontSize: 12),
                                 ),
                               ),
-                              const SizedBox(width: 3),
-                              const Spacer(),
-                              IconButton(
-                                onPressed: _entries.length > 1
-                                    ? () => _removeSubject(index)
-                                    : null,
-                                tooltip: '과목 삭제',
-                                icon: const Icon(Icons.close, size: 17),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            ],
-                          ),
-                          TextFormField(
-                            controller: entry.scoreController,
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              final score = int.tryParse((value ?? '').trim());
-                              if (score == null || score < 0 || score > 100) {
-                                return '0~100 사이의 점수를 입력해 주세요.';
-                              }
-                              return null;
-                            },
-                            decoration: InputDecoration(
-                              labelText: '점수',
-                              hintText: 'Input',
-                              filled: true,
-                              fillColor: inputGray,
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 10,
-                              ),
-                              border: const UnderlineInputBorder(),
-                              enabledBorder: const UnderlineInputBorder(
-                                borderSide: BorderSide(color: Colors.black38),
-                              ),
-                              focusedBorder: const UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: purple,
-                                  width: 1.5,
-                                ),
-                              ),
-                              suffixIcon: IconButton(
-                                tooltip: '점수 지우기',
-                                icon: const Icon(
-                                  Icons.cancel_outlined,
-                                  size: 16,
-                                  color: Colors.black54,
-                                ),
-                                onPressed: entry.scoreController.clear,
-                              ),
-                            ),
-                          ),
-                        ],
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() => _selectedExam = value);
+                        },
                       ),
-                    );
-                  }),
-                ),
-              ),
-
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ElevatedButton(
-                  onPressed: _addSubject,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF383638),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
+
+                    const SizedBox(height: 28),
+
+                    Form(
+                      key: _formKey,
+                      child: Column(
+                        children: List.generate(_entries.length, (index) {
+                          final entry = _entries[index];
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      entry.subject,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    const Spacer(),
+                                    IconButton(
+                                      onPressed: _entries.length > 1
+                                          ? () => _removeSubject(index)
+                                          : null,
+                                      tooltip: '과목 삭제',
+                                      icon: const Icon(Icons.close, size: 17),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ],
+                                ),
+                                TextFormField(
+                                  controller: entry.scoreController,
+                                  keyboardType: TextInputType.number, // 숫자 키패드
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly, // 숫자 외 입력 차단
+                                    LengthLimitingTextInputFormatter(3), // 최대 3자리 (0~100)
+                                  ],
+                                  validator: (value) {
+                                    final score = int.tryParse((value ?? '').trim());
+                                    if (score == null || score < 0 || score > 100) {
+                                      return '0~100 사이의 점수를 입력해 주세요.';
+                                    }
+                                    return null;
+                                  },
+                                  decoration: InputDecoration(
+                                    labelText: '점수',
+                                    hintText: 'Input',
+                                    filled: true,
+                                    fillColor: inputGray,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                    border: const UnderlineInputBorder(),
+                                    enabledBorder: const UnderlineInputBorder(
+                                      borderSide: BorderSide(color: Colors.black38),
+                                    ),
+                                    focusedBorder: const UnderlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: purple,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    suffixIcon: IconButton(
+                                      tooltip: '점수 지우기',
+                                      icon: const Icon(
+                                        Icons.cancel_outlined,
+                                        size: 16,
+                                        color: Colors.black54,
+                                      ),
+                                      onPressed: entry.scoreController.clear,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ),
                     ),
-                    elevation: 0,
-                  ),
-                  child: const Text('과목 추가', style: TextStyle(fontSize: 12)),
-                ),
-              ),
 
-              const SizedBox(height: 42),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton(
+                        onPressed: _addSubject,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF383638),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text('과목 추가', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
 
-              Center(
-                child: _PillButton(
-                  label: '제출',
-                  onPressed: _submitScores,
+                    const SizedBox(height: 42),
+
+                    Center(
+                      child: _PillButton(
+                        label: '제출',
+                        onPressed: _submitScores,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -736,6 +884,28 @@ class _ScoreEntry {
 // ─────────────────────────────────────────────
 // NEIS 튜토리얼 화면
 // ─────────────────────────────────────────────
+
+/// 튜토리얼 한 단계 (설명 + 이미지 경로)
+class _TutorialStep {
+  final String text;
+  final String? imagePath; // 예: 'assets/neis/step1.png' — null이면 임시 아이콘 표시
+
+  const _TutorialStep({required this.text, this.imagePath});
+}
+
+// ★ 튜토리얼 이미지가 준비되면 아래 imagePath에 경로만 넣으면 됩니다.
+//   (이미지 파일은 assets/neis/ 등에 넣고 pubspec.yaml의 assets에도 등록해야 합니다.)
+//   단계를 늘리거나 줄이려면 이 목록에 항목을 추가/삭제하면 화면에 그대로 반영됩니다.
+const List<_TutorialStep> _neisTutorialSteps = [
+  _TutorialStep(
+    text: 'STEP 1. NEIS에서 성적 조회 메뉴를 찾으세요.',
+    imagePath: null, // 예: 'assets/neis/step1.png'
+  ),
+  _TutorialStep(
+    text: 'STEP 2. 확인한 성적을 앱에 입력하세요.',
+    imagePath: null, // 예: 'assets/neis/step2.png'
+  ),
+];
 
 class NeisTutorialPage extends StatelessWidget {
   const NeisTutorialPage({super.key});
@@ -772,38 +942,26 @@ class NeisTutorialPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 30,
-                  minHeight: 38,
-                ),
-              ),
+              const _BackButton(),
               const SizedBox(height: 14),
-              const Center(child: _TutorialIllustration()),
-              const SizedBox(height: 22),
-              const Text(
-                'STEP 1. NEIS에서 성적 조회 메뉴를 찾으세요.',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+              // 단계별 이미지 + 설명 (내용은 위쪽 _neisTutorialSteps에서 관리)
+              for (int i = 0; i < _neisTutorialSteps.length; i++) ...[
+                Center(
+                  child: _TutorialIllustration(
+                    imagePath: _neisTutorialSteps[i].imagePath,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              const Center(child: _TutorialIllustration()),
-              const SizedBox(height: 22),
-              const Text(
-                'STEP 2. 확인한 성적을 앱에 입력하세요.',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                const SizedBox(height: 22),
+                Text(
+                  _neisTutorialSteps[i].text,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 42),
+                SizedBox(height: i == _neisTutorialSteps.length - 1 ? 42 : 18),
+              ],
               Center(
                 child: _PillButton(
                   label: 'NEIS 이동',
@@ -820,47 +978,71 @@ class NeisTutorialPage extends StatelessWidget {
   }
 }
 
+/// 튜토리얼 이미지 칸
+/// imagePath가 있으면 그 이미지를, 없거나 불러오지 못하면 임시 아이콘을 보여줍니다.
 class _TutorialIllustration extends StatelessWidget {
-  const _TutorialIllustration();
+  final String? imagePath;
+
+  const _TutorialIllustration({this.imagePath});
+
+  // 이미지 칸 크기 (튜토리얼 이미지 비율에 맞춰 조절 가능)
+  static const double _width = 180;
+  static const double _height = 118;
+
+  Widget _placeholder() {
+    const iconColor = Color(0xFFC9C1D0);
+
+    return const Stack(
+      children: [
+        Positioned(
+          top: 13,
+          left: 70,
+          child: Icon(
+            Icons.change_history_rounded,
+            color: iconColor,
+            size: 43,
+          ),
+        ),
+        Positioned(
+          left: 34,
+          bottom: 22,
+          child: Icon(Icons.settings, color: iconColor, size: 36),
+        ),
+        Positioned(
+          right: 34,
+          bottom: 19,
+          child: Icon(
+            Icons.crop_square_rounded,
+            color: iconColor,
+            size: 43,
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    const iconColor = Color(0xFFC9C1D0);
+    final path = imagePath;
 
     return Container(
-      width: 180,
-      height: 118,
+      width: _width,
+      height: _height,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: const Color(0xFFEDE6F1),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Stack(
-        children: [
-          Positioned(
-            top: 13,
-            left: 70,
-            child: Icon(
-              Icons.change_history_rounded,
-              color: iconColor,
-              size: 43,
+      child: (path == null || path.isEmpty)
+          ? _placeholder()
+          : Image.asset(
+              path,
+              fit: BoxFit.contain,
+              errorBuilder: (_, error, __) {
+                debugPrint('튜토리얼 이미지를 불러오지 못했습니다: $path ($error)');
+                return _placeholder();
+              },
             ),
-          ),
-          Positioned(
-            left: 34,
-            bottom: 22,
-            child: Icon(Icons.settings, color: iconColor, size: 36),
-          ),
-          Positioned(
-            right: 34,
-            bottom: 19,
-            child: Icon(
-              Icons.crop_square_rounded,
-              color: iconColor,
-              size: 43,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

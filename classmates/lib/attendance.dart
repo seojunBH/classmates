@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'bottomBar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -200,9 +201,11 @@ class _attendanceState extends State<attendance> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('실시간 출결'),
         backgroundColor: const Color.fromARGB(255, 212, 211, 211),
       ),
+      bottomNavigationBar: const bottom_bar(),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
         itemCount: students.length,

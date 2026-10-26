@@ -1,80 +1,78 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'bottomBar.dart';
 
 //전체 공지화면 앱바
 class notification_bar extends StatelessWidget
     implements PreferredSizeWidget {
   const notification_bar({super.key});
 
+  // 상단바 버튼 목록 (아이콘 / 텍스트 / 경로)
+  static const List<_TopItem> _items = [
+    _TopItem(icon: Icons.notifications, label: '공지', route: '/notification'),
+    _TopItem(icon: Icons.rule, label: '규칙', route: '/rules'),
+    _TopItem(icon: Icons.table_view, label: '시간표', route: '/time_table'),
+    _TopItem(icon: Icons.schedule, label: '일정', route: '/schedule'),
+  ];
+
   @override
   Size get preferredSize => const Size.fromHeight(80);
 
+  // 현재 라우트와 같으면 이동하지 않음 (하단바와 동일)
+  void _go(BuildContext context, String routeName) {
+    if (ModalRoute.of(context)?.settings.name == routeName) return;
+    Navigator.pushNamed(context, routeName);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+
     return AppBar(
+      automaticallyImplyLeading: false,
       backgroundColor: const Color.fromARGB(255, 212, 211, 211),
       toolbarHeight: 80,
-      leading: IconButton(
-        onPressed: () {
-          Navigator.pop(context);
-        },
-        icon: const Icon(Icons.arrow_back_ios_new),
-      ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/notification');
-            },
-            child: const Row(
+        children: _items.map((item) {
+          final isCurrent = currentRoute == item.route;
+
+          return OutlinedButton(
+            onPressed: () => _go(context, item.route),
+            // 현재 위치의 버튼은 하단바와 같은 스타일(배경색/테두리)로 표시
+            style: isCurrent
+                ? OutlinedButton.styleFrom(
+                    backgroundColor: Colors.black12,
+                    side: const BorderSide(width: 2, color: Colors.black12),
+                  )
+                : null,
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.notifications),
-                Text('공지'),
+                Icon(item.icon),
+                Text(item.label),
               ],
             ),
-          ),
-          OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/rules');
-            },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.rule),
-                Text('규칙'),
-              ],
-            ),
-          ),
-          OutlinedButton(
-            onPressed: () {
-              // Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
-            },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.table_view),
-                Text('시간표'),
-              ],
-            ),
-          ),
-          OutlinedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/schedule');
-            },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.schedule),
-                Text('일정'),
-              ],
-            ),
-          ),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
-} //+) 네비게이터 고치기
+}
+
+class _TopItem {
+  final IconData icon;
+  final String label;
+  final String route;
+
+  const _TopItem({
+    required this.icon,
+    required this.label,
+    required this.route,
+  });
+}
 
 //가정통신문 공지 한 블록
 class notification_card extends StatelessWidget {
@@ -126,6 +124,7 @@ class _notificationState extends State<notification> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: const notification_bar(),
+        bottomNavigationBar: const bottom_bar(),
         body: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -156,6 +155,7 @@ class _rulesState extends State<rules> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: notification_bar(),
+        bottomNavigationBar: const bottom_bar(),
         body: SingleChildScrollView(
           child: Center(
               child: Column(
@@ -318,6 +318,7 @@ class _scheduleState extends State<schedule> {
 
     return Scaffold(
       appBar: const notification_bar(),
+      bottomNavigationBar: const bottom_bar(),
       body: GestureDetector(
         // 좌우로 밀어서 달 이동
         onHorizontalDragEnd: (d) {
@@ -635,6 +636,828 @@ class _scheduleState extends State<schedule> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+// ─────────────────────────────────────────────
+// 시간표 화면 (NEIS 교육정보 개발 포털 Open API)
+// ─────────────────────────────────────────────
+
+/// open.neis.go.kr 에서 발급받은 인증키를 아래 문자열에 직접 입력하세요.
+const String _neisKey = 'c5be902880ea4e1695596365a98b8f8d';
+
+const Color _ttPurple = Color(0xFF6750A4); // 입력창 테두리
+const Color _ttDivider = Color(0xFFE6E0F5); // 구분선
+const Color _ttDropdownBg = Color(0xFFF3EDF7); // 드롭다운 배경
+const Color _ttHeaderBg = Color(0xFFEDEDFA); // 표 머리칸
+const Color _ttCellBg = Color(0xFFFFFFE8); // 표 내용칸
+const Color _ttBorder = Color(0xFFCCCCCC);
+const Color _ttLink = Color(0xFF1A0DAB); // 학교 검색 결과 (파란 글씨)
+
+class _NeisException implements Exception {
+  final String message;
+  const _NeisException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class _NeisSchool {
+  final String officeCode; // ATPT_OFCDC_SC_CODE (시도교육청 코드)
+  final String schoolCode; // SD_SCHUL_CODE (학교 코드)
+  final String name; // SCHUL_NM
+  final String kind; // SCHUL_KND_SC_NM (초등학교/중학교/고등학교/특수학교)
+  final String region; // 지역 (서울, 경기 ...)
+
+  const _NeisSchool({
+    required this.officeCode,
+    required this.schoolCode,
+    required this.name,
+    required this.kind,
+    required this.region,
+  });
+
+  factory _NeisSchool.fromJson(Map<String, dynamic> j) => _NeisSchool(
+        officeCode: j['ATPT_OFCDC_SC_CODE']?.toString() ?? '',
+        schoolCode: j['SD_SCHUL_CODE']?.toString() ?? '',
+        name: j['SCHUL_NM']?.toString() ?? '',
+        kind: j['SCHUL_KND_SC_NM']?.toString() ?? '',
+        region: _shortRegion(j['LCTN_SC_NM']?.toString() ?? ''),
+      );
+}
+
+/// '서울특별시' → '서울', '충청북도' → '충북' 처럼 줄여서 표시
+String _shortRegion(String full) {
+  const special = {
+    '충청북도': '충북',
+    '충청남도': '충남',
+    '전라북도': '전북',
+    '전북특별자치도': '전북',
+    '전라남도': '전남',
+    '경상북도': '경북',
+    '경상남도': '경남',
+  };
+  if (special.containsKey(full)) return special[full]!;
+  return full.length >= 2 ? full.substring(0, 2) : full;
+}
+
+/// NEIS Open API 공통 호출.
+/// 페이지를 나누어 조회해 결과가 1,000건을 넘더라도 누락되지 않도록 합니다.
+Future<List<Map<String, dynamic>>> _neisFetch(
+    String service, Map<String, String> params) async {
+  if (_neisKey.trim().isEmpty) {
+    throw const _NeisException(
+      'NEIS 인증키가 설정되지 않았습니다.\n'
+      'notification.dart 상단의 _neisKey에 발급받은 인증키를 입력해주세요.',
+    );
+  }
+
+  const pageSize = 1000;
+  final allRows = <Map<String, dynamic>>[];
+
+  for (var page = 1; page <= 100; page++) {
+    final uri = Uri.https('open.neis.go.kr', '/hub/$service', {
+      'KEY': _neisKey.trim(),
+      'Type': 'json',
+      'pIndex': '$page',
+      'pSize': '$pageSize',
+      ...params,
+    });
+
+    http.Response res;
+    try {
+      res = await http.get(uri).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      throw const _NeisException('네트워크 연결을 확인해주세요.');
+    }
+
+    if (res.statusCode != 200) {
+      throw _NeisException('NEIS 서버 오류가 발생했습니다. (${res.statusCode})');
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      throw const _NeisException(
+        'NEIS 응답을 해석할 수 없습니다. 인증키와 API 응답을 확인해주세요.',
+      );
+    }
+
+    if (decoded is! Map) {
+      throw const _NeisException('NEIS 응답 형식이 올바르지 않습니다.');
+    }
+
+    final body = Map<String, dynamic>.from(decoded);
+    final topResult = body['RESULT'];
+    if (topResult is Map) {
+      final code = topResult['CODE']?.toString();
+      if (code == 'INFO-200') return allRows;
+      throw _NeisException(
+        topResult['MESSAGE']?.toString() ?? 'NEIS API 오류가 발생했습니다.',
+      );
+    }
+
+    final blocks = body[service];
+    if (blocks is! List) {
+      if (allRows.isNotEmpty) return allRows;
+      throw const _NeisException(
+        'NEIS 응답에 시간표 데이터가 없습니다. 학교·학급·조회 날짜를 확인해주세요.',
+      );
+    }
+
+    final pageRows = <Map<String, dynamic>>[];
+    for (final block in blocks) {
+      if (block is! Map) continue;
+
+      final head = block['head'];
+      if (head is List) {
+        for (final item in head) {
+          if (item is! Map || item['RESULT'] is! Map) continue;
+          final result = item['RESULT'] as Map;
+          final code = result['CODE']?.toString();
+          if (code == 'INFO-200') return allRows;
+          if (code != null && code != 'INFO-000') {
+            throw _NeisException(
+              result['MESSAGE']?.toString() ?? 'NEIS API 오류가 발생했습니다.',
+            );
+          }
+        }
+      }
+
+      final rows = block['row'];
+      if (rows is List) {
+        pageRows.addAll(
+          rows.whereType<Map>().map(
+                (row) => Map<String, dynamic>.from(row),
+              ),
+        );
+      }
+    }
+
+    allRows.addAll(pageRows);
+
+    // 마지막 페이지는 보통 pageSize보다 적은 결과를 반환합니다.
+    if (pageRows.length < pageSize) return allRows;
+  }
+
+  throw const _NeisException(
+    '조회 결과가 너무 많아 중단했습니다. 검색 조건을 확인해주세요.',
+  );
+}
+
+String _ymd(DateTime d) =>
+    '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+
+/// 학교 종류별 시간표 서비스명
+String? _timetableService(String kind) {
+  if (kind.contains('초등')) return 'elsTimetable';
+  if (kind.contains('중학')) return 'misTimetable';
+  if (kind.contains('고등')) return 'hisTimetable';
+  if (kind.contains('특수')) return 'spsTimetable';
+  return null;
+}
+
+int _numCompare(String a, String b) {
+  final x = int.tryParse(a), y = int.tryParse(b);
+  if (x != null && y != null) return x.compareTo(y);
+  return a.compareTo(b);
+}
+
+class time_table extends StatefulWidget {
+  const time_table({super.key});
+
+  @override
+  State<time_table> createState() => _time_tableState();
+}
+
+class _time_tableState extends State<time_table> {
+  _NeisSchool? _school;
+  bool _searching = false; // 학교 찾기 화면 표시 여부
+
+  // 학급 목록 (학년 → 반 목록)
+  Map<String, List<String>> _classesByGrade = {};
+  bool _classLoading = false;
+  String? _classError;
+
+  String? _grade; // '1'
+  String? _className; // '1'
+
+  // 시간표: yyyyMMdd → (교시 → 과목)
+  Map<String, Map<int, String>>? _timetable;
+  bool _ttLoading = false;
+  String? _ttError;
+  int _reqId = 0;
+
+  late DateTime _monday; // 표시할 주의 월요일
+
+  @override
+  void initState() {
+    super.initState();
+    final n = DateTime.now();
+    // 토/일요일에는 다음 주 시간표를 보여줌
+    final shift = n.weekday >= DateTime.saturday ? 7 : 0;
+    _monday = DateTime(n.year, n.month, n.day - (n.weekday - 1) + shift);
+  }
+
+  List<String> get _grades {
+    final list = _classesByGrade.keys.toList()..sort(_numCompare);
+    return list;
+  }
+
+  List<String> get _classOptions {
+    if (_grade != null) return _classesByGrade[_grade] ?? const [];
+    // 학년을 아직 고르지 않았다면 전체 반 번호를 보여줌
+    final all = <String>{for (final l in _classesByGrade.values) ...l};
+    return all.toList()..sort(_numCompare);
+  }
+
+  // ── 학교 선택 → 학급 목록 불러오기 ──
+  Future<void> _selectSchool(_NeisSchool school) async {
+    _reqId++;
+    setState(() {
+      _school = school;
+      _searching = false;
+      _grade = null;
+      _className = null;
+      _timetable = null;
+      _ttLoading = false;
+      _ttError = null;
+      _classesByGrade = {};
+      _classLoading = true;
+      _classError = null;
+    });
+    await _loadClasses(school);
+  }
+
+  Future<void> _loadClasses(_NeisSchool school) async {
+    final now = DateTime.now();
+    final academicYear = now.month >= 3 ? now.year : now.year - 1;
+    try {
+      final rows = await _neisFetch('classInfo', {
+        'ATPT_OFCDC_SC_CODE': school.officeCode,
+        'SD_SCHUL_CODE': school.schoolCode,
+        'AY': '$academicYear',
+      });
+      if (!mounted || _school != school) return;
+
+      final grouped = <String, Set<String>>{};
+      for (final r in rows) {
+        final g = r['GRADE']?.toString() ?? '';
+        final c = r['CLASS_NM']?.toString() ?? '';
+        if (g.isEmpty || c.isEmpty) continue;
+        grouped.putIfAbsent(g, () => {}).add(c);
+      }
+      setState(() {
+        _classesByGrade = {
+          for (final e in grouped.entries) e.key: e.value.toList()..sort(_numCompare)
+        };
+        _classLoading = false;
+        _classError =
+            grouped.isEmpty ? '학급 정보를 찾을 수 없습니다.' : null;
+      });
+    } on _NeisException catch (e) {
+      if (!mounted || _school != school) return;
+      setState(() {
+        _classLoading = false;
+        _classError = e.message;
+      });
+    } catch (e) {
+      if (!mounted || _school != school) return;
+      setState(() {
+        _classLoading = false;
+        _classError = '학급 정보를 처리하지 못했습니다: $e';
+      });
+    }
+  }
+
+  void _onGradeChanged(String? g) {
+    setState(() {
+      _grade = g;
+      // 새 학년에 없는 반이면 반 선택 해제
+      if (g != null &&
+          _className != null &&
+          !(_classesByGrade[g]?.contains(_className) ?? false)) {
+        _className = null;
+      }
+    });
+    _loadTimetable();
+  }
+
+  void _onClassChanged(String? c) {
+    setState(() => _className = c);
+    _loadTimetable();
+  }
+
+  // ── 시간표 불러오기 ──
+  Future<void> _loadTimetable() async {
+    final id = ++_reqId;
+    final school = _school;
+    final grade = _grade;
+    final cls = _className;
+
+    if (school == null || grade == null || cls == null) {
+      setState(() {
+        _timetable = null;
+        _ttLoading = false;
+        _ttError = null;
+      });
+      return;
+    }
+
+    final service = _timetableService(school.kind);
+    if (service == null) {
+      setState(() {
+        _timetable = null;
+        _ttLoading = false;
+        _ttError = '${school.kind}은(는) 시간표 조회를 지원하지 않습니다.';
+      });
+      return;
+    }
+
+    setState(() {
+      _ttLoading = true;
+      _ttError = null;
+      _timetable = null;
+    });
+
+    try {
+      final rows = await _neisFetch(service, {
+        'ATPT_OFCDC_SC_CODE': school.officeCode,
+        'SD_SCHUL_CODE': school.schoolCode,
+        // NEIS 시간표 조회에는 해당 학년도와 학기도 함께 전달합니다.
+        'AY': '${_monday.month >= 3 ? _monday.year : _monday.year - 1}',
+        'SEM': '${_monday.month >= 8 || _monday.month <= 2 ? 2 : 1}',
+        'GRADE': grade,
+        'CLASS_NM': cls,
+        'TI_FROM_YMD': _ymd(_monday),
+        'TI_TO_YMD':
+            _ymd(DateTime(_monday.year, _monday.month, _monday.day + 4)),
+      });
+      if (!mounted || id != _reqId) return;
+
+      final data = <String, Map<int, String>>{};
+      for (final r in rows) {
+        final date = r['ALL_TI_YMD']?.toString() ?? '';
+        final period = int.tryParse(r['PERIO']?.toString() ?? '');
+        final subject = r['ITRT_CNTNT']?.toString() ?? '';
+        if (date.isEmpty || period == null || subject.isEmpty) continue;
+        final day = data.putIfAbsent(date, () => {});
+        final prev = day[period];
+        // 같은 교시에 여러 과목이 있으면 줄바꿈으로 함께 표시
+        if (prev == null) {
+          day[period] = subject;
+        } else if (!prev.split('\n').contains(subject)) {
+          day[period] = '$prev\n$subject';
+        }
+      }
+      setState(() {
+        _timetable = data;
+        _ttLoading = false;
+      });
+    } on _NeisException catch (e) {
+      if (!mounted || id != _reqId) return;
+      setState(() {
+        _ttLoading = false;
+        _ttError = e.message;
+      });
+    } catch (e) {
+      if (!mounted || id != _reqId) return;
+      setState(() {
+        _ttLoading = false;
+        _ttError = '시간표 데이터를 처리하지 못했습니다: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      // 학교 찾기 화면에서 뒤로가기 → 시간표 화면으로 복귀
+      canPop: !_searching,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _searching) setState(() => _searching = false);
+      },
+      child: Scaffold(
+        appBar: const notification_bar(),
+        bottomNavigationBar: const bottom_bar(),
+        body: _searching
+            ? _SchoolSearchPanel(onSelected: _selectSchool)
+            : _buildMain(),
+      ),
+    );
+  }
+
+  Widget _buildMain() {
+    final school = _school;
+
+    // 학교 입력 이전
+    if (school == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('학교 이름을 입력하세요',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            FilledButton.tonal(
+              onPressed: () => setState(() => _searching = true),
+              child: const Text('학교 찾기'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // 학교명 + 학교 찾기 버튼
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  school.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: () => setState(() => _searching = true),
+                child: const Text('학교 찾기'),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: 3,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          color: _ttDivider,
+        ),
+        // 학급 입력
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 14),
+                child: Text('학급 :',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildPickerField(
+                  key: ValueKey('grade-${school.schoolCode}'),
+                  hint: '학년',
+                  suffix: '학년',
+                  options: _grades,
+                  current: _grade,
+                  onChanged: _onGradeChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildPickerField(
+                  key: ValueKey('class-${school.schoolCode}-$_grade'),
+                  hint: '반',
+                  suffix: '반',
+                  options: _classOptions,
+                  current: _className,
+                  onChanged: _onClassChanged,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+            child: _buildBody(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBody() {
+    if (_classLoading || _ttLoading) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 40),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_classError != null) {
+      return _errorView(_classError!, () => _loadClasses(_school!));
+    }
+    if (_ttError != null) {
+      return _errorView(_ttError!, _loadTimetable);
+    }
+    final data = _timetable;
+    if (data == null) return const SizedBox.shrink(); // 학급 입력 이전
+    if (data.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 40),
+        child: Center(child: Text('이번 주 시간표 정보가 없습니다.')),
+      );
+    }
+    return _buildTable(data);
+  }
+
+  Widget _errorView(String message, VoidCallback onRetry) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40),
+      child: Column(
+        children: [
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          TextButton(onPressed: onRetry, child: const Text('다시 시도')),
+        ],
+      ),
+    );
+  }
+
+  // 학년 / 반 입력창 (클릭하면 목록이 뜨고, 선택하면 채워짐. X 버튼으로 비움)
+  Widget _buildPickerField({
+    required Key key,
+    required String hint,
+    required String suffix,
+    required List<String> options,
+    required String? current,
+    required ValueChanged<String?> onChanged,
+  }) {
+    String label(String v) => '$v$suffix';
+    const border = OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(4)),
+      borderSide: BorderSide(color: _ttPurple, width: 2),
+    );
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      return Autocomplete<String>(
+        key: key,
+        initialValue: current == null
+            ? null
+            : TextEditingValue(text: label(current)),
+        displayStringForOption: label,
+        optionsBuilder: (value) {
+          final text = value.text.trim();
+          // 비어있거나 이미 선택된 값이면 전체 목록 표시
+          if (text.isEmpty || options.any((o) => label(o) == text)) {
+            return options;
+          }
+          return options.where((o) => label(o).contains(text));
+        },
+        onSelected: (v) {
+          FocusManager.instance.primaryFocus?.unfocus();
+          onChanged(v);
+        },
+        fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            onTapOutside: (_) => focusNode.unfocus(),
+            onChanged: (t) {
+              // 직접 고쳐 쓰면 선택 해제 (시간표 숨김)
+              if (current != null && t != label(current)) onChanged(null);
+            },
+            decoration: InputDecoration(
+              hintText: hint,
+              border: border,
+              enabledBorder: border,
+              focusedBorder: border,
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.cancel_outlined),
+                onPressed: () {
+                  controller.clear();
+                  onChanged(null);
+                  focusNode.requestFocus();
+                },
+              ),
+            ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, opts) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              color: _ttDropdownBg,
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                width: width,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 260),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: opts.length,
+                    itemBuilder: (context, i) {
+                      final o = opts.elementAt(i);
+                      return InkWell(
+                        onTap: () => onSelected(o),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 16),
+                          child: Text(label(o),
+                              style: const TextStyle(fontSize: 16)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  // 주간 시간표 표
+  Widget _buildTable(Map<String, Map<int, String>> data) {
+    const dayNames = ['월', '화', '수', '목', '금'];
+    final days = List.generate(
+        5, (i) => DateTime(_monday.year, _monday.month, _monday.day + i));
+
+    int maxPeriod = 7;
+    for (final m in data.values) {
+      for (final p in m.keys) {
+        if (p > maxPeriod) maxPeriod = p;
+      }
+    }
+
+    Widget cell(String text,
+        {required Color bg, double fontSize = 12, bool bold = false}) {
+      return Container(
+        color: bg,
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+        alignment: Alignment.center,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal),
+        ),
+      );
+    }
+
+    return Table(
+      border: TableBorder.all(color: _ttBorder, width: 0.5),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      columnWidths: const {0: FlexColumnWidth(1.3)},
+      children: [
+        TableRow(children: [
+          cell('교시', bg: _ttHeaderBg, fontSize: 11),
+          for (int i = 0; i < 5; i++)
+            cell('${dayNames[i]}(${days[i].day})',
+                bg: _ttHeaderBg, fontSize: 11),
+        ]),
+        for (int p = 1; p <= maxPeriod; p++)
+          TableRow(children: [
+            cell('$p', bg: _ttHeaderBg, fontSize: 11),
+            for (int i = 0; i < 5; i++)
+              cell(data[_ymd(days[i])]?[p] ?? '', bg: _ttCellBg),
+          ]),
+      ],
+    );
+  }
+}
+
+// 학교 찾기 (검색어 입력 → 검색 → 결과에서 학교 선택)
+class _SchoolSearchPanel extends StatefulWidget {
+  final ValueChanged<_NeisSchool> onSelected;
+  const _SchoolSearchPanel({required this.onSelected});
+
+  @override
+  State<_SchoolSearchPanel> createState() => _SchoolSearchPanelState();
+}
+
+class _SchoolSearchPanelState extends State<_SchoolSearchPanel> {
+  final TextEditingController _controller = TextEditingController();
+  List<_NeisSchool>? _results; // null: 아직 검색 전
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final keyword = _controller.text.trim();
+    if (keyword.isEmpty) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await _neisFetch('schoolInfo', {'SCHUL_NM': keyword});
+      if (!mounted) return;
+      setState(() {
+        _results = rows.map(_NeisSchool.fromJson).toList();
+        _loading = false;
+      });
+    } on _NeisException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _results = null;
+        _error = e.message;
+      });
+    }
+  }
+
+  Widget _tableCell(Widget child) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        child: Center(child: child),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _search(),
+                  decoration: InputDecoration(
+                    labelText: '학교 이름',
+                    filled: true,
+                    fillColor: const Color(0xFFE7E0EC),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.cancel_outlined),
+                      onPressed: () => _controller.clear(),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.tonal(
+                onPressed: _search,
+                child: const Text('학교 검색'),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: 3,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          color: _ttDivider,
+        ),
+        Expanded(child: _buildResults()),
+      ],
+    );
+  }
+
+  Widget _buildResults() {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) return Center(child: Text(_error!));
+    final results = _results;
+    if (results == null) return const SizedBox.shrink(); // 검색 이전
+    if (results.isEmpty) return const Center(child: Text('검색 결과가 없습니다.'));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Table(
+        border: TableBorder.all(color: _ttBorder, width: 0.5),
+        columnWidths: const {0: FractionColumnWidth(0.2)},
+        children: [
+          TableRow(children: [
+            _tableCell(const Text('지역')),
+            _tableCell(const Text('학교명')),
+          ]),
+          for (final s in results)
+            TableRow(children: [
+              _tableCell(Text(s.region)),
+              InkWell(
+                onTap: () => widget.onSelected(s),
+                child: _tableCell(Text(
+                  s.name,
+                  style: const TextStyle(
+                    color: _ttLink,
+                    decoration: TextDecoration.underline,
+                  ),
+                )),
+              ),
+            ]),
+        ],
       ),
     );
   }

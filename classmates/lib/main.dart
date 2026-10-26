@@ -29,6 +29,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/notification':(context)=>const notification(),
         '/rules':(context)=>const rules(),
+        '/time_table': (context) => const time_table(),
         '/schedule': (context) => const schedule(),
         '/attendance': (context) => const attendance(),
         '/ranking': (context) => const RankingBoardPage(),

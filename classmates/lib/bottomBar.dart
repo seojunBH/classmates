@@ -16,7 +16,7 @@ class bottom_bar extends StatelessWidget {
       icon: Icons.notifications,
       label: '공지',
       route: '/notification',
-      extraRoutes: ['/rules', '/schedule'], // 규칙/일정 화면에서도 '공지'를 현재 위치로 표시
+      extraRoutes: ['/rules', '/time_table', '/schedule'], // 규칙/시간표/일정 화면에서도 '공지'를 현재 위치로 표시
     ),
     _BottomItem(icon: Icons.emoji_events, label: '랭크', route: '/ranking'),
     _BottomItem(icon: Icons.check_circle, label: '출석', route: '/attendance'),

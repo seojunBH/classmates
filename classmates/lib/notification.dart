@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'bottomBar.dart';
 
 //전체 공지화면 앱바
 class notification_bar extends StatelessWidget
@@ -8,28 +9,25 @@ class notification_bar extends StatelessWidget
   @override
   Size get preferredSize => const Size.fromHeight(80);
 
-  // 현재 라우트와 같으면 이동하지 않음
-  void _go(BuildContext context, String routeName) {
-    if (ModalRoute.of(context)?.settings.name == routeName) return;
-    Navigator.pushNamed(context, routeName);
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppBar(
+      automaticallyImplyLeading: false,
       backgroundColor: const Color.fromARGB(255, 212, 211, 211),
       toolbarHeight: 80,
-      leading: IconButton(
-        onPressed: () {
-          Navigator.pop(context);
-        },
-        icon: const Icon(Icons.arrow_back_ios_new),
-      ),
+      // leading: IconButton(
+      //   onPressed: () {
+      //     Navigator.pop(context);
+      //   },
+      //   icon: const Icon(Icons.arrow_back_ios_new),
+      // ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           OutlinedButton(
-            onPressed: () => _go(context, '/notification'),
+            onPressed: () {
+              Navigator.pushNamed(context, '/notification');
+            },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -39,7 +37,9 @@ class notification_bar extends StatelessWidget
             ),
           ),
           OutlinedButton(
-            onPressed: () => _go(context, '/rules'),
+            onPressed: () {
+              Navigator.pushNamed(context, '/rules');
+            },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -50,7 +50,7 @@ class notification_bar extends StatelessWidget
           ),
           OutlinedButton(
             onPressed: () {
-              // _go(context, '/notification'); //네비게이션 아직 미수정
+              // Navigator.pushNamed(context, '/notification'); //네비게이션 아직 미수정
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -61,7 +61,9 @@ class notification_bar extends StatelessWidget
             ),
           ),
           OutlinedButton(
-            onPressed: () => _go(context, '/schedule'),
+            onPressed: () {
+              Navigator.pushNamed(context, '/schedule');
+            },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -126,6 +128,7 @@ class _notificationState extends State<notification> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: const notification_bar(),
+        bottomNavigationBar: const bottom_bar(),
         body: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -156,6 +159,7 @@ class _rulesState extends State<rules> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: notification_bar(),
+        bottomNavigationBar: const bottom_bar(),
         body: SingleChildScrollView(
           child: Center(
               child: Column(
@@ -318,6 +322,7 @@ class _scheduleState extends State<schedule> {
 
     return Scaffold(
       appBar: const notification_bar(),
+      bottomNavigationBar: const bottom_bar(),
       body: GestureDetector(
         // 좌우로 밀어서 달 이동
         onHorizontalDragEnd: (d) {

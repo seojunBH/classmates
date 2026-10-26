@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'bottomBar.dart';
 import 'package:flutter/services.dart'; // 숫자만 입력받는 필터용
 // NEIS 사이트 열기 기능을 켤 때 아래 import의 주석을 풀고 pubspec.yaml에 url_launcher를 추가하세요.
 // import 'package:url_launcher/url_launcher.dart';
@@ -281,9 +282,11 @@ class _RankingBoardPageState extends State<RankingBoardPage> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('성적 랭크'),
         backgroundColor: const Color.fromARGB(255, 212, 211, 211),
       ),
+      bottomNavigationBar: const bottom_bar(),
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())

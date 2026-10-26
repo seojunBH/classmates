@@ -13,7 +13,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: const RankingBoardPage(),
+      initialRoute: '/ranking',
       routes: {
         '/notification':(context)=>const notification(),
         '/rules':(context)=>const rules(),

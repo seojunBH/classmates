@@ -555,6 +555,14 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
   // 1칸: 정기고사 / 모의고사
   // 정기고사 → 2칸: 1학기/2학기, 3칸: 중간/기말
   // 모의고사 → 2칸: 시행 월 (3·4·6·7·9·10·11월)
+  static const List<String> _gradeLevels = [
+    '중학교 1학년',
+    '중학교 2학년',
+    '중학교 3학년',
+    '고등학교 1학년',
+    '고등학교 2학년',
+    '고등학교 3학년',
+  ];
   static const List<String> _examCategories = ['정기고사', '모의고사'];
   static const List<String> _semesters = ['1학기', '2학기'];
   static const List<String> _termTypes = ['중간', '기말'];
@@ -568,6 +576,7 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
     '11월',
   ];
 
+  String? _gradeLevel; // 중학교 1학년 ~ 고등학교 3학년 (시험 종류보다 먼저 선택)
   String? _examCategory; // 정기고사 / 모의고사
   String? _semester; // 정기고사일 때: 1학기 / 2학기
   String? _termType; // 정기고사일 때: 중간 / 기말
@@ -689,6 +698,13 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
   }
 
   void _submitScores() {
+    if (_gradeLevel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('학년을 선택해 주세요.')),
+      );
+      return;
+    }
+
     final examLabel = _examLabel;
     if (examLabel == null) {
       final message = _examCategory == null
@@ -705,13 +721,14 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     // 현재는 입력 검증과 화면 복귀까지만 수행합니다.
-    // 실제 기록 저장 시 시험 선택값(_examCategory/_semester/_termType/_mockMonth)과
+    // 실제 기록 저장 시 학년(_gradeLevel), 시험 선택값(_examCategory/_semester/_termType/_mockMonth)과
     // _entries의 값을 DB/API에 저장하세요.
     final scoreData = <String, int>{};
     for (final entry in _entries) {
       scoreData[entry.subject] = int.parse(entry.scoreController.text.trim());
     }
 
+    debugPrint('학년: $_gradeLevel');
     debugPrint('시험: $examLabel');
     debugPrint('성적: $scoreData');
 
@@ -779,6 +796,15 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
                       spacing: 8,
                       runSpacing: 10,
                       children: [
+                        _buildExamDropdown(
+                          key: const ValueKey('exam-grade-level'),
+                          width: 140,
+                          hint: '학년',
+                          value: _gradeLevel,
+                          options: _gradeLevels,
+                          onChanged: (value) =>
+                              setState(() => _gradeLevel = value),
+                        ),
                         _buildExamDropdown(
                           key: const ValueKey('exam-category'),
                           width: 110,

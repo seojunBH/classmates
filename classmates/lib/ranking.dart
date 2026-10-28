@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'bottomBar.dart';
 import 'package:flutter/services.dart'; // 숫자만 입력받는 필터용
-// NEIS 사이트 열기 기능을 켤 때 아래 import의 주석을 풀고 pubspec.yaml에 url_launcher를 추가하세요.
-// import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher.dart'; // NEIS 사이트 열기 (pubspec.yaml에 url_launcher 필요)
 
 // ─────────────────────────────────────────────
 // 데이터 모델 (이후 백엔드 연동 시 교체)
@@ -552,21 +551,51 @@ class ScoreRegistrationPage extends StatefulWidget {
 class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  String? _selectedExam;
-
-  // 요청한 시험 종류 목록
-  static const List<String> _examTypes = [
-    '1학기 중간',
-    '1학기 기말',
-    '2학기 중간',
-    '2학기 기말',
-    '3월 모의고사',
-    '5월 모의고사',
-    '6월 모의고사',
-    '7월 모의고사',
-    '9월 모의고사',
-    '10월 모의고사',
+  // ── 시험 선택 (3단계) ──
+  // 1칸: 정기고사 / 모의고사
+  // 정기고사 → 2칸: 1학기/2학기, 3칸: 중간/기말
+  // 모의고사 → 2칸: 시행 월 (3·4·6·7·9·10·11월)
+  static const List<String> _gradeLevels = [
+    '중학교 1학년',
+    '중학교 2학년',
+    '중학교 3학년',
+    '고등학교 1학년',
+    '고등학교 2학년',
+    '고등학교 3학년',
   ];
+  static const List<String> _examCategories = ['정기고사', '모의고사'];
+  static const List<String> _semesters = ['1학기', '2학기'];
+  static const List<String> _termTypes = ['중간', '기말'];
+  static const List<String> _mockMonths = [
+    '3월',
+    '4월',
+    '6월',
+    '7월',
+    '9월',
+    '10월',
+    '11월',
+  ];
+
+  String? _gradeLevel; // 중학교 1학년 ~ 고등학교 3학년 (시험 종류보다 먼저 선택)
+  String? _examCategory; // 정기고사 / 모의고사
+  String? _semester; // 정기고사일 때: 1학기 / 2학기
+  String? _termType; // 정기고사일 때: 중간 / 기말
+  String? _mockMonth; // 모의고사일 때: 3월 ~ 11월
+
+  bool get _isRegularExam => _examCategory == '정기고사';
+  bool get _isMockExam => _examCategory == '모의고사';
+
+  /// 선택이 모두 끝났으면 '1학기 중간' / '6월 모의고사' 형태의 이름을, 아니면 null
+  /// ★ 저장 시 이 값(또는 개별 선택값)을 DB/API에 사용하세요.
+  String? get _examLabel {
+    if (_isRegularExam && _semester != null && _termType != null) {
+      return '$_semester $_termType';
+    }
+    if (_isMockExam && _mockMonth != null) {
+      return '$_mockMonth 모의고사';
+    }
+    return null;
+  }
 
   // 프로젝트/학교에서 사용할 과목 선택지입니다.
   // 사용 중인 과목은 추가 대화상자의 선택지에서 자동으로 제외됩니다.
@@ -669,9 +698,22 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
   }
 
   void _submitScores() {
-    if (_selectedExam == null) {
+    if (_gradeLevel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('시험 종류를 선택해 주세요.')),
+        const SnackBar(content: Text('학년을 선택해 주세요.')),
+      );
+      return;
+    }
+
+    final examLabel = _examLabel;
+    if (examLabel == null) {
+      final message = _examCategory == null
+          ? '시험 종류를 선택해 주세요.'
+          : _isRegularExam
+              ? '학기와 중간/기말을 모두 선택해 주세요.'
+              : '모의고사 시행 월을 선택해 주세요.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
       );
       return;
     }
@@ -679,16 +721,56 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     // 현재는 입력 검증과 화면 복귀까지만 수행합니다.
-    // 실제 기록 저장 시 _selectedExam과 _entries의 값을 DB/API에 저장하세요.
+    // 실제 기록 저장 시 학년(_gradeLevel), 시험 선택값(_examCategory/_semester/_termType/_mockMonth)과
+    // _entries의 값을 DB/API에 저장하세요.
     final scoreData = <String, int>{};
     for (final entry in _entries) {
       scoreData[entry.subject] = int.parse(entry.scoreController.text.trim());
     }
 
-    debugPrint('시험: $_selectedExam');
+    debugPrint('학년: $_gradeLevel');
+    debugPrint('시험: $examLabel');
     debugPrint('성적: $scoreData');
 
     Navigator.pop(context, true);
+  }
+
+  /// 시험 선택용 드롭다운 한 칸 (모양은 기존 시험 종류 칸과 동일)
+  Widget _buildExamDropdown({
+    required Key key,
+    required double width,
+    required String hint,
+    required String? value,
+    required List<String> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return SizedBox(
+      width: width,
+      child: DropdownButtonFormField<String>(
+        key: key,
+        value: value,
+        isExpanded: true,
+        hint: Text(hint, style: const TextStyle(fontSize: 12)),
+        decoration: const InputDecoration(
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: purple, width: 1.4),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: purple, width: 1.8),
+          ),
+        ),
+        items: options
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(option, style: const TextStyle(fontSize: 12)),
+              ),
+            )
+            .toList(),
+        onChanged: onChanged,
+      ),
+    );
   }
 
   @override
@@ -709,42 +791,68 @@ class _ScoreRegistrationPageState extends State<ScoreRegistrationPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      width: 190,
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedExam,
-                        isExpanded: true,
-                        hint: const Text(
-                          '시험 종류',
-                          style: TextStyle(fontSize: 12),
+                    // 시험 선택: [정기고사/모의고사] + (학기 + 중간/기말 | 시행 월)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      children: [
+                        _buildExamDropdown(
+                          key: const ValueKey('exam-grade-level'),
+                          width: 140,
+                          hint: '학년',
+                          value: _gradeLevel,
+                          options: _gradeLevels,
+                          onChanged: (value) =>
+                              setState(() => _gradeLevel = value),
                         ),
-                        decoration: const InputDecoration(
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 11,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderSide: BorderSide(color: purple, width: 1.4),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: BorderSide(color: purple, width: 1.8),
-                          ),
+                        _buildExamDropdown(
+                          key: const ValueKey('exam-category'),
+                          width: 110,
+                          hint: '시험 종류',
+                          value: _examCategory,
+                          options: _examCategories,
+                          onChanged: (value) {
+                            if (value == _examCategory) return;
+                            // 종류를 바꾸면 뒤쪽 선택은 모두 초기화
+                            setState(() {
+                              _examCategory = value;
+                              _semester = null;
+                              _termType = null;
+                              _mockMonth = null;
+                            });
+                          },
                         ),
-                        items: _examTypes
-                            .map(
-                              (exam) => DropdownMenuItem<String>(
-                                value: exam,
-                                child: Text(
-                                  exam,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() => _selectedExam = value);
-                        },
-                      ),
+                        if (_isRegularExam) ...[
+                          _buildExamDropdown(
+                            key: const ValueKey('exam-semester'),
+                            width: 100,
+                            hint: '학기',
+                            value: _semester,
+                            options: _semesters,
+                            onChanged: (value) =>
+                                setState(() => _semester = value),
+                          ),
+                          _buildExamDropdown(
+                            key: const ValueKey('exam-term'),
+                            width: 100,
+                            hint: '중간/기말',
+                            value: _termType,
+                            options: _termTypes,
+                            onChanged: (value) =>
+                                setState(() => _termType = value),
+                          ),
+                        ],
+                        if (_isMockExam)
+                          _buildExamDropdown(
+                            key: const ValueKey('exam-mock-month'),
+                            width: 100,
+                            hint: '시행 월',
+                            value: _mockMonth,
+                            options: _mockMonths,
+                            onChanged: (value) =>
+                                setState(() => _mockMonth = value),
+                          ),
+                      ],
                     ),
 
                     const SizedBox(height: 28),
@@ -909,29 +1017,31 @@ const List<_TutorialStep> _neisTutorialSteps = [
 
 class NeisTutorialPage extends StatelessWidget {
   const NeisTutorialPage({super.key});
-  // 아직 미연결: 후배가 나중에 커밋하기로 한 기능 (url_launcher 필요)
-  // Future<void> _openNeis(BuildContext context) async {
-  //   final uri = Uri.parse('https://www.neis.go.kr/');
+  static final Uri _neisUri = Uri.parse('https://www.neis.go.kr/');
 
-  //   try {
-  //     final opened = await launchUrl(
-  //       uri,
-  //       mode: LaunchMode.externalApplication,
-  //     );
+  /// NEIS 사이트를 기기의 외부 브라우저로 엽니다.
+  Future<void> _openNeis(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
 
-  //     if (!opened && context.mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text('NEIS 사이트를 열 수 없습니다.')),
-  //       );
-  //     }
-  //   } catch (_) {
-  //     if (context.mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text('사이트 연결에 실패했습니다.')),
-  //       );
-  //     }
-  //   }
-  // }
+    try {
+      // canLaunchUrl은 Android 11+/iOS에서 설정이 없으면 false를 돌려주므로 쓰지 않고 바로 실행합니다.
+      final opened = await launchUrl(
+        _neisUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('NEIS 사이트를 열 수 없습니다.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('NEIS 열기 실패: $e');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('사이트 연결에 실패했습니다.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -965,8 +1075,7 @@ class NeisTutorialPage extends StatelessWidget {
               Center(
                 child: _PillButton(
                   label: 'NEIS 이동',
-                  // onPressed: () => _openNeis(context),
-                  onPressed: () {}, // 아직 미연결 (_openNeis 주석 해제 후 위 줄로 교체)
+                  onPressed: () => _openNeis(context),
                 ),
               ),
               const SizedBox(height: 24),

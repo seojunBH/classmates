@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'bottomBar.dart';
 
 //전체 공지화면 앱바
@@ -74,37 +75,56 @@ class _TopItem {
   });
 }
 
-//가정통신문 공지 한 블록
+//가정통신문 공지 한 개의 데이터 (이후 firebase에서 불러온 데이터로 교체)
+class NoticeItem {
+  final String title;
+  final String content;
+  const NoticeItem({required this.title, required this.content});
+}
+
+//가정통신문 공지 한 블록 (누르면 onTap 실행)
 class notification_card extends StatelessWidget {
   final String title;
   final String content;
+  final VoidCallback? onTap;
 
   const notification_card({
     super.key,
     required this.title,
     required this.content,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.8,
-        height: 150,
-        color: const Color.fromARGB(255, 212, 211, 211),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,),
-                SizedBox(height: 30,),
-                Text(content.length > 100 ? '${content.substring(0, 100)}...' : content,),
-              ],
-            ),
-          ],
+    // 가로 폭은 목록(ListView)이 정하고, 높이는 모든 카드가 같게 고정
+    return Material(
+      color: const Color.fromARGB(255, 212, 211, 211),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          height: 150,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              // 글자 수 제한(100자) + 줄 수 제한(3줄)으로 고정 높이를 넘지 않게 함
+              Text(
+                content.length > 100 ? '${content.substring(0, 100)}...' : content,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -120,22 +140,70 @@ class notification extends StatefulWidget {
 }
 
 class _notificationState extends State<notification> {
+  // 화면에 띄울 공지 목록. 공지를 추가하면 이 목록에 항목이 늘어나고 화면에 그대로 반영됨.
+  // (현재는 임시 데이터 / 이후 firebase에서 불러온 목록으로 교체)
+  final List<NoticeItem> _notices = const [
+    NoticeItem(title: '가정통신문', content: '2026학년도 2학기 학부모 상담 주간 운영 안내입니다.\n상담은 다음 주 월요일부터 금요일까지 진행되며, 희망하는 날짜와 시간을 신청서에 작성하여 담임선생님께 제출해 주시기 바랍니다.'),
+    NoticeItem(title: '현장체험학습 안내', content: '다음 달 현장체험학습이 예정되어 있습니다.\n학생들은 오전 8시 30분까지 학교에 집합해야 하며, 편안한 복장과 운동화, 개인 물통을 준비해 주세요.\n참가 동의서는 이번 주 금요일까지 제출해 주시기 바랍니다.'),
+    NoticeItem(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.\n시험 시간표와 시험 범위를 미리 확인하고, 시험 당일에는 필기도구와 필요한 준비물을 빠짐없이 챙겨 주세요.'),
+    NoticeItem(title: '급식 안내', content: '학교 급식실 시설 점검으로 인해 이번 주 수요일에는 급식 제공 시간이 변경됩니다.\n점심 식사는 오후 12시부터 제공될 예정이며, 학생들은 학년별 안내에 따라 질서 있게 식사해 주시기 바랍니다.'),
+    NoticeItem(title: '교내 체육대회 안내', content: '학생들의 화합과 건강한 학교생활을 위한 교내 체육대회가 다음 달 개최됩니다.\n학급별 경기 종목과 일정은 추후 안내할 예정이며, 참가 학생들은 안전 수칙을 준수하고 체육활동에 필요한 복장과 준비물을 갖춰 주시기 바랍니다.'),
+    NoticeItem(title: '개인정보 보호 교육 안내', content: '최근 온라인상에서 개인정보 유출 및 계정 도용 사례가 증가하고 있습니다.\n학생들은 비밀번호를 주기적으로 변경하고, 타인에게 계정 정보를 공유하지 않도록 주의해 주세요.\n가정에서도 자녀가 안전한 인터넷 사용 습관을 기를 수 있도록 지도해 주시기 바랍니다.'),
+    NoticeItem(title: '방과후학교 수강 신청', content: '2학기 방과후학교 수강 신청이 시작되었습니다.\n프로그래밍, 영어, 수학 등 다양한 강좌가 개설될 예정이며, 강좌별 수강 인원과 운영 시간은 학교 홈페이지에서 확인할 수 있습니다.\n신청을 희망하는 학생은 안내된 기간 내에 신청을 완료해 주세요.'),
+    NoticeItem(title: '봉사활동 참여 안내', content: '지역사회와 함께하는 환경 정화 봉사활동 참가자를 모집합니다.\n활동은 토요일 오전에 진행되며, 학교 주변 환경 정리와 분리배출 캠페인 등의 프로그램이 마련되어 있습니다.\n참여를 희망하는 학생은 참가 신청서를 작성하여 담당 선생님께 제출해 주세요.'),
+    NoticeItem(title: '학부모 공개수업 안내', content: '학교 교육활동에 대한 학부모님의 이해를 돕기 위해 학부모 공개수업을 실시합니다.\n수업 참관을 희망하시는 학부모님께서는 안내된 날짜와 교시를 확인해 주시기 바랍니다.\n원활한 수업 진행을 위해 참관 중에는 휴대전화 사용을 자제해 주시고, 지정된 좌석을 이용해 주세요.'),
+    NoticeItem(title: '학생 건강검진 안내', content: '학생들의 건강 상태 확인을 위한 정기 건강검진이 실시됩니다.\n검진 대상 학생은 지정된 기간 내에 검진기관을 방문해야 하며, 검진 전 주의사항과 준비물은 가정통신문을 통해 확인해 주시기 바랍니다.\n검진 결과에 추가 확인이 필요한 경우에는 보호자에게 별도로 안내할 예정입니다.'),
+    NoticeItem(title: '학교 도서관 이용 안내', content: '도서관 장서 점검 및 자료 정리 작업으로 인해 이번 주 금요일 오후에는 도서 대출과 반납 서비스가 일시적으로 중단됩니다.\n대출 중인 도서는 반납 기한을 확인해 주시고, 필요한 도서는 운영 중인 시간에 미리 대출해 주시기 바랍니다.'),
+    NoticeItem(title: '수학여행 참가 신청', content: '2학년 수학여행 일정 및 참가 신청에 관한 안내입니다.\n숙박 시설과 주요 방문 장소, 이동 방법 및 안전교육 계획은 첨부된 안내 자료를 참고해 주세요.\n참가 여부를 확인할 수 있도록 보호자 동의서를 작성하여 다음 주 수요일까지 제출해 주시기 바랍니다.'),
+    NoticeItem(title: '교복 공동구매 안내', content: '신입생 및 교복 추가 구매가 필요한 학생들을 대상으로 교복 공동구매 신청을 받습니다.\n품목별 가격과 치수 측정 일정, 수령 방법은 학교 홈페이지에 게시된 안내문을 확인해 주세요.\n신청 기간 이후에는 공동구매 가격 적용이 어려울 수 있으므로 기간 내 신청해 주시기 바랍니다.'),
+    NoticeItem(title: '학교폭력 예방 교육 안내', content: '안전하고 존중하는 학교 문화를 만들기 위해 학교폭력 예방 교육을 실시합니다.\n언어폭력, 사이버폭력, 따돌림 등 다양한 사례를 통해 올바른 의사소통 방법과 갈등 해결 방법을 배우게 됩니다.\n가정에서도 서로를 존중하는 언어 사용과 온라인 예절에 관해 자녀와 함께 이야기해 주시기 바랍니다.'),
+    NoticeItem(title: '진로진학 설명회 개최', content: '학생들의 진로 탐색과 진학 준비를 지원하기 위한 진로진학 설명회를 개최합니다.\n이번 설명회에서는 대학 진학 전형의 주요 특징과 전공 선택 방법, 취업 및 진로 설계에 관한 정보를 안내할 예정입니다.\n참석을 희망하는 학부모님께서는 사전 신청 기간과 장소를 확인해 주시기 바랍니다.'),
+    NoticeItem(title: '교내 소프트웨어 경진대회', content: '학생들의 창의적인 문제 해결 능력과 프로그래밍 역량을 높이기 위한 교내 소프트웨어 경진대회를 개최합니다.\n참가자는 개인 또는 팀 단위로 신청할 수 있으며, 주제와 제출 형식, 심사 기준은 별도 안내문을 참고해 주세요.\n참가 신청은 다음 주 금요일까지 접수합니다.'),
+    NoticeItem(title: '미세먼지 대응 안내', content: '미세먼지 농도가 높아질 경우 학생들의 건강 보호를 위해 실외 체육활동이 실내 활동으로 변경될 수 있습니다.\n외출 시에는 기상 정보를 확인하고, 필요한 경우 보건용 마스크를 착용해 주세요.\n호흡기 증상이 있는 학생은 무리한 야외활동을 피하고 보호자 및 학교에 알려주시기 바랍니다.'),
+    NoticeItem(title: '학교 시설 공사 안내', content: '학생들의 안전한 교육환경 조성을 위해 본관 일부 시설의 보수 공사가 진행됩니다.\n공사 기간에는 해당 구역의 출입이 제한되며, 통행 시 안내 표지와 안전요원의 지시에 따라 이동해 주세요.\n공사로 인한 소음이 발생할 수 있는 점 양해 부탁드리며, 학생 안전을 최우선으로 관리하겠습니다.'),
+    NoticeItem(title: '겨울방학 생활 안내', content: '겨울방학 중 학생들이 안전하고 규칙적인 생활을 할 수 있도록 가정에서 관심과 지도를 부탁드립니다.\n장시간의 스마트폰 사용을 줄이고 충분한 수면과 적절한 신체활동을 유지할 수 있도록 지도해 주세요.\n또한 겨울철 화재 예방, 빙판길 안전, 대중교통 이용 수칙 등을 숙지하여 안전사고가 발생하지 않도록 유의해 주시기 바랍니다.'),
+    NoticeItem(title: '학교 교육과정 설명회', content: '2027학년도 교육과정 운영 및 선택과목 안내를 위한 설명회를 개최합니다.\n이번 설명회에서는 학년별 교육과정 편성, 과목 선택 시 유의사항, 평가 방식 및 학업 계획 수립 방법 등을 안내할 예정입니다.\n학생과 학부모님께서는 안내된 일정과 장소를 확인하시고, 원활한 진행을 위해 시작 시간에 맞춰 참석해 주시기 바랍니다.'),
+  ];
+
+  // 공지를 누르면 제목과 전체 내용을 팝업으로 보여줌
+  void _showNoticeDetail(NoticeItem notice) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(notice.title),
+        // 내용이 길면 팝업 안에서 스크롤
+        content: SingleChildScrollView(child: Text(notice.content)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: const notification_bar(),
-        bottomNavigationBar: const bottom_bar(),
-        body: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
-            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
-            notification_card(title: '학교 공지사항', content: '다음 주 월요일부터 중간고사 기간이 시작됩니다.' ),
-          ],
-        ),
+      appBar: const notification_bar(),
+      bottomNavigationBar: const bottom_bar(),
+      body: _notices.isEmpty
+          ? const Center(child: Text('등록된 공지가 없습니다.'))
+          // 게시판처럼: 공지 사이 간격을 일정하게 두고, 많아지면 스크롤로 내려서 봄
+          : ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              itemCount: _notices.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => notification_card(
+                title: _notices[i].title,
+                content: _notices[i].content,
+                onTap: () => _showNoticeDetail(_notices[i]),
+              ),
+            ),
     );
   }
-} // +) 권리자에게는 공지 추가 기능 있어야 함, +) 플러스 알파 기능 추가, +) 카드 지금은 3개 임의 지정이지만 이후엔 추가하는 대로 되도록
+} // +) 권리자에게는 공지 추가 기능 있어야 함, +) 플러스 알파 기능 추가
 
 // 규칙 전체 화면 (이후에 백엔드 작업 후에 규칙 적용하면 됨)
 class rules extends StatefulWidget {
@@ -201,81 +269,135 @@ Color _typeColor(ScheduleType t) =>
 String _typeName(ScheduleType t) =>
     t == ScheduleType.academic ? '학사일정' : '수행평가';
 
-/// 한국 공휴일 (대체공휴일·임시공휴일 포함).
-/// 2025~2026년 고정 데이터입니다. 이후 연도는 직접 추가하거나
-/// 공공데이터포털 '특일 정보' API 등으로 대체하세요.
-final Map<DateTime, String> _koreanHolidays = {
-  // 2025
-  DateTime(2025, 1, 1): '신정',
-  DateTime(2025, 1, 27): '임시공휴일',
-  DateTime(2025, 1, 28): '설날 연휴',
-  DateTime(2025, 1, 29): '설날',
-  DateTime(2025, 1, 30): '설날 연휴',
-  DateTime(2025, 3, 1): '삼일절',
-  DateTime(2025, 3, 3): '대체공휴일',
-  DateTime(2025, 5, 5): '어린이날·부처님오신날',
-  DateTime(2025, 5, 6): '대체공휴일',
-  DateTime(2025, 6, 3): '대통령 선거일',
-  DateTime(2025, 6, 6): '현충일',
-  DateTime(2025, 8, 15): '광복절',
-  DateTime(2025, 10, 3): '개천절',
-  DateTime(2025, 10, 5): '추석 연휴',
-  DateTime(2025, 10, 6): '추석',
-  DateTime(2025, 10, 7): '추석 연휴',
-  DateTime(2025, 10, 8): '대체공휴일',
-  DateTime(2025, 10, 9): '한글날',
-  DateTime(2025, 12, 25): '성탄절',
-  // 2026
-  DateTime(2026, 1, 1): '신정',
-  DateTime(2026, 2, 16): '설날 연휴',
-  DateTime(2026, 2, 17): '설날',
-  DateTime(2026, 2, 18): '설날 연휴',
-  DateTime(2026, 3, 1): '삼일절',
-  DateTime(2026, 3, 2): '대체공휴일',
-  DateTime(2026, 5, 5): '어린이날',
-  DateTime(2026, 5, 24): '부처님오신날',
-  DateTime(2026, 5, 25): '대체공휴일',
-  DateTime(2026, 6, 3): '지방선거일',
-  DateTime(2026, 6, 6): '현충일',
-  DateTime(2026, 8, 15): '광복절',
-  DateTime(2026, 8, 17): '대체공휴일',
-  DateTime(2026, 9, 24): '추석 연휴',
-  DateTime(2026, 9, 25): '추석',
-  DateTime(2026, 9, 26): '추석 연휴',
-  DateTime(2026, 9, 28): '대체공휴일',
-  DateTime(2026, 10, 3): '개천절',
-  DateTime(2026, 10, 5): '대체공휴일',
-  DateTime(2026, 10, 9): '한글날',
-  DateTime(2026, 12, 25): '성탄절',
-};
+/// 공공데이터포털(data.go.kr)에서 발급받은 '특일 정보' API 인증키를 입력하세요.
+/// ★ 마이페이지에서 복사할 때 "일반 인증키(Decoding)" 쪽을 넣어야 합니다.
+///   (Encoding 키를 넣으면 한 번 더 인코딩되어 인증 오류가 납니다.)
+const String _dataGoKrKey = '4980157bf3a25ffdf58a704faa68b848cb732593ee2ccf36c744811c003181f6';
 
-/// 임의의 학사일정/수행평가 (현재 달 기준 전달~다음달에 항상 보이도록 생성)
-Map<DateTime, List<ScheduleItem>> _buildSampleSchedule() {
-  final map = <DateTime, List<ScheduleItem>>{};
-  void add(int y, int m, int d, String title, ScheduleType type) {
-    map.putIfAbsent(DateTime(y, m, d), () => []).add(ScheduleItem(title, type));
+/// 국가 특일(공휴일) 조회 — 한국천문연구원 특일 정보 API (getRestDeInfo)
+/// 해당 연도의 공휴일 전체를 {날짜: [이름들]} 로 돌려줍니다.
+Future<Map<DateTime, List<String>>> _fetchHolidays(int year) async {
+  if (_dataGoKrKey.trim().isEmpty) {
+    throw const _NeisException(
+      '공휴일 API 인증키가 설정되지 않았습니다.\n'
+      'notification.dart 의 _dataGoKrKey 에 인증키를 입력해주세요.',
+    );
   }
 
-  const ac = ScheduleType.academic;
-  const asmt = ScheduleType.assessment;
+  final uri = Uri.https(
+    'apis.data.go.kr',
+    '/B090041/openapi/service/SpcdeInfoService/getRestDeInfo',
+    {
+      'serviceKey': _dataGoKrKey.trim(),
+      'solYear': '$year',
+      '_type': 'json',
+      'numOfRows': '100',
+      'pageNo': '1',
+    },
+  );
+
+  http.Response res;
+  try {
+    res = await http.get(uri).timeout(const Duration(seconds: 15));
+  } catch (_) {
+    throw const _NeisException('네트워크 연결을 확인해주세요.');
+  }
+  if (res.statusCode != 200) {
+    throw _NeisException('공휴일 서버 오류가 발생했습니다. (${res.statusCode})');
+  }
+
+  dynamic decoded;
+  try {
+    decoded = jsonDecode(utf8.decode(res.bodyBytes));
+  } catch (_) {
+    // 인증키 오류 등은 JSON이 아닌 XML/텍스트로 응답되는 경우가 있음
+    throw const _NeisException('공휴일 응답을 해석할 수 없습니다. 인증키를 확인해주세요.');
+  }
+
+  final response = decoded is Map ? decoded['response'] : null;
+  final header = response is Map ? response['header'] : null;
+  final resultCode = header is Map ? header['resultCode']?.toString() : null;
+  if (resultCode != null && resultCode != '00') {
+    throw _NeisException(
+      '공휴일 API 오류: ${header['resultMsg'] ?? resultCode}',
+    );
+  }
+
+  final body = response is Map ? response['body'] : null;
+  final items = body is Map ? body['items'] : null;
+  // 결과가 없으면 items 가 빈 문자열("")로 옴
+  if (items is! Map) return {};
+
+  // 결과가 1건이면 item 이 Map, 여러 건이면 List 로 옴
+  final raw = items['item'];
+  final list = raw is List ? raw : (raw is Map ? [raw] : const []);
+
+  final result = <DateTime, List<String>>{};
+  for (final e in list) {
+    if (e is! Map) continue;
+    if (e['isHoliday']?.toString() != 'Y') continue; // 쉬는 날만
+    final loc = e['locdate']?.toString() ?? '';
+    final name = e['dateName']?.toString() ?? '';
+    if (loc.length != 8 || name.isEmpty) continue;
+    final date = DateTime(
+      int.parse(loc.substring(0, 4)),
+      int.parse(loc.substring(4, 6)),
+      int.parse(loc.substring(6, 8)),
+    );
+    final names = result.putIfAbsent(date, () => []);
+    if (!names.contains(name)) names.add(name);
+  }
+  return result;
+}
+
+/// 학사일정 조회 — NEIS 학사일정 API (SchoolSchedule)
+/// 해당 연도의 학교 학사일정을 {날짜: [일정명들]} 로 돌려줍니다.
+Future<Map<DateTime, List<String>>> _fetchAcademicSchedule(
+    _NeisSchool school, int year) async {
+  final rows = await _neisFetch('SchoolSchedule', {
+    'ATPT_OFCDC_SC_CODE': school.officeCode,
+    'SD_SCHUL_CODE': school.schoolCode,
+    'AA_FROM_YMD': '${year}0101',
+    'AA_TO_YMD': '${year}1231',
+  });
+
+  final result = <DateTime, List<String>>{};
+  for (final r in rows) {
+    final ymd = r['AA_YMD']?.toString() ?? '';
+    final name = r['EVENT_NM']?.toString().trim() ?? '';
+    if (ymd.length != 8 || name.isEmpty) continue;
+    final date = DateTime(
+      int.parse(ymd.substring(0, 4)),
+      int.parse(ymd.substring(4, 6)),
+      int.parse(ymd.substring(6, 8)),
+    );
+    final names = result.putIfAbsent(date, () => []);
+    if (!names.contains(name)) names.add(name);
+  }
+  return result;
+}
+
+/// 수행평가 일정 (임시 데이터)
+/// ★ 이후 firebase에서 불러온 데이터로 이 함수 안만 교체하면 됩니다.
+///   (현재 달 기준 전달~다음달에 항상 보이도록 생성)
+Map<DateTime, List<ScheduleItem>> _buildSampleAssessments() {
+  final map = <DateTime, List<ScheduleItem>>{};
+  void add(int y, int m, int d, String title) {
+    map
+        .putIfAbsent(DateTime(y, m, d), () => [])
+        .add(ScheduleItem(title, ScheduleType.assessment));
+  }
+
   final now = DateTime.now();
 
   for (int off = -1; off <= 1; off++) {
     final base = DateTime(now.year, now.month + off, 1);
     final y = base.year, m = base.month;
 
-    add(y, m, 4, '학급 회의', ac);
-    add(y, m, 7, '국어 발표', asmt);
-    add(y, m, 10, '학부모 상담', ac);
-    add(y, m, 13, '영어 에세이', asmt);
-    add(y, m, 15, '현장체험학습', ac);
-    add(y, m, 20, '중간고사', ac);
-    add(y, m, 21, '중간고사', ac);
-    add(y, m, 21, '과학 보고서', asmt);
-    add(y, m, 22, '중간고사', ac);
-    add(y, m, 25, '진로 특강', ac);
-    add(y, m, 27, '수학 수행평가', asmt);
-    add(y, m, 27, '체육대회', ac);
+    add(y, m, 7, '국어 발표');
+    add(y, m, 13, '영어 에세이');
+    add(y, m, 21, '과학 보고서');
+    add(y, m, 27, '수학 수행평가');
   }
   return map;
 }
@@ -292,22 +414,132 @@ class _scheduleState extends State<schedule> {
   static const double _lineHeight = 14;
 
   late DateTime _month; // 표시 중인 달 (1일 기준)
-  final Map<DateTime, List<ScheduleItem>> _items = _buildSampleSchedule();
+
+  // 수행평가: 임시 데이터 (이후 firebase)
+  final Map<DateTime, List<ScheduleItem>> _assessments =
+      _buildSampleAssessments();
+
+  // 공휴일 / 학사일정: API에서 불러온 데이터 (연도별로 한 번만 불러와 보관)
+  final Map<DateTime, List<String>> _holidays = {};
+  final Map<DateTime, List<String>> _academic = {};
+  final Set<int> _holidayYears = {}; // 이미 불러온 연도
+  final Set<int> _academicYears = {};
+  final Set<int> _loadingYears = {}; // 불러오는 중인 연도 (중복 호출 방지)
+  _NeisSchool? _school; // 시간표 화면에서 선택해 둔 학교 (학사일정 조회용)
+  bool _schoolChecked = false;
+  String? _holidayError;
+  String? _academicError;
 
   @override
   void initState() {
     super.initState();
     final n = DateTime.now();
     _month = DateTime(n.year, n.month);
+    _init();
+  }
+
+  Future<void> _init() async {
+    // 시간표 화면에서 선택해 저장해 둔 학교를 가져옴
+    await _SavedSelection.loadFromDisk();
+    if (!mounted) return;
+    setState(() {
+      _school = _SavedSelection.school;
+      _schoolChecked = true;
+    });
+    await _ensureLoaded();
+  }
+
+  /// 현재 달력(앞뒤로 이어지는 달 포함)에 필요한 연도의 데이터를 불러옴
+  Future<void> _ensureLoaded() async {
+    final first = DateTime(_month.year, _month.month, 1);
+    final gridStart = DateTime(first.year, first.month, 1 - first.weekday % 7);
+    final gridEnd =
+        DateTime(gridStart.year, gridStart.month, gridStart.day + 41);
+    final years = {gridStart.year, _month.year, gridEnd.year};
+    for (final y in years) {
+      _loadYear(y);
+    }
+  }
+
+  Future<void> _loadYear(int year) async {
+    final school = _school;
+    final needHoliday = !_holidayYears.contains(year);
+    final needAcademic = school != null && !_academicYears.contains(year);
+    if (!needHoliday && !needAcademic) return;
+    if (!_loadingYears.add(year)) return; // 이미 불러오는 중
+
+    try {
+      if (needHoliday) {
+        try {
+          final data = await _fetchHolidays(year);
+          if (!mounted) return;
+          setState(() {
+            _holidays.addAll(data);
+            _holidayYears.add(year);
+            _holidayError = null;
+          });
+        } on _NeisException catch (e) {
+          if (mounted) setState(() => _holidayError = e.message);
+        } catch (e) {
+          if (mounted) setState(() => _holidayError = '공휴일 정보를 처리하지 못했습니다: $e');
+        }
+      }
+
+      if (needAcademic) {
+        try {
+          final data = await _fetchAcademicSchedule(school!, year);
+          if (!mounted) return;
+          setState(() {
+            _academic.addAll(data);
+            _academicYears.add(year);
+            _academicError = null;
+          });
+        } on _NeisException catch (e) {
+          if (mounted) setState(() => _academicError = e.message);
+        } catch (e) {
+          if (mounted) setState(() => _academicError = '학사일정을 처리하지 못했습니다: $e');
+        }
+      }
+    } finally {
+      _loadingYears.remove(year);
+    }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _holidayError = null;
+      _academicError = null;
+    });
+    _ensureLoaded();
+  }
+
+  /// 공휴일 이름 (여러 개면 ', '로 연결)
+  String? _holidayName(DateTime key) {
+    final names = _holidays[key];
+    if (names == null || names.isEmpty) return null;
+    return names.join(', ');
+  }
+
+  /// 하루의 학사일정 + 수행평가 (공휴일과 이름이 같은 학사일정은 중복이라 제외)
+  List<ScheduleItem> _itemsOf(DateTime key) {
+    final holidayNames = _holidays[key] ?? const <String>[];
+    return [
+      for (final title in _academic[key] ?? const <String>[])
+        if (!holidayNames.contains(title))
+          ScheduleItem(title, ScheduleType.academic),
+      ...(_assessments[key] ?? const <ScheduleItem>[]),
+    ];
   }
 
   void _moveMonth(int delta) {
     setState(() => _month = DateTime(_month.year, _month.month + delta));
+    _ensureLoaded();
   }
 
   void _goToday() {
     final n = DateTime.now();
     setState(() => _month = DateTime(n.year, n.month));
+    _ensureLoaded();
   }
 
   @override
@@ -330,6 +562,7 @@ class _scheduleState extends State<schedule> {
           children: [
             _buildHeader(),
             _buildLegend(),
+            _buildStatusNotice(),
             _buildWeekdayRow(),
             Expanded(
               child: Column(
@@ -375,6 +608,34 @@ class _scheduleState extends State<schedule> {
           ),
           const Spacer(),
           TextButton(onPressed: _goToday, child: const Text('오늘')),
+        ],
+      ),
+    );
+  }
+
+  // 학교 미선택 / 불러오기 실패 안내
+  Widget _buildStatusNotice() {
+    final messages = <String>[
+      if (_holidayError != null) _holidayError!,
+      if (_academicError != null) _academicError!,
+      if (_schoolChecked && _school == null)
+        '학사일정을 보려면 시간표 탭에서 학교를 먼저 선택해주세요.',
+    ];
+    if (messages.isEmpty) return const SizedBox.shrink();
+
+    final hasError = _holidayError != null || _academicError != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 8, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              messages.join('\n'),
+              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ),
+          if (hasError)
+            TextButton(onPressed: _retryLoad, child: const Text('다시 시도')),
         ],
       ),
     );
@@ -449,8 +710,8 @@ class _scheduleState extends State<schedule> {
   Widget _buildDayCell(DateTime day) {
     final key = _dateKey(day);
     final inMonth = day.month == _month.month;
-    final holiday = _koreanHolidays[key];
-    final items = _items[key] ?? const <ScheduleItem>[];
+    final holiday = _holidayName(key);
+    final items = _itemsOf(key);
     final isToday = key == _dateKey(DateTime.now());
 
     Color numColor;
@@ -575,8 +836,8 @@ class _scheduleState extends State<schedule> {
   // 날짜를 누르면 그날의 일정을 전부 보여주는 시트
   void _showDayDetail(DateTime day) {
     final key = _dateKey(day);
-    final holiday = _koreanHolidays[key];
-    final items = _items[key] ?? const <ScheduleItem>[];
+    final holiday = _holidayName(key);
+    final items = _itemsOf(key);
 
     showModalBottomSheet(
       context: context,
@@ -685,6 +946,88 @@ class _NeisSchool {
         kind: j['SCHUL_KND_SC_NM']?.toString() ?? '',
         region: _shortRegion(j['LCTN_SC_NM']?.toString() ?? ''),
       );
+
+  // 기기에 저장할 때 사용 (선택한 학교 기억용)
+  Map<String, String> toStorage() => {
+        'officeCode': officeCode,
+        'schoolCode': schoolCode,
+        'name': name,
+        'kind': kind,
+        'region': region,
+      };
+
+  factory _NeisSchool.fromStorage(Map<String, dynamic> j) => _NeisSchool(
+        officeCode: j['officeCode']?.toString() ?? '',
+        schoolCode: j['schoolCode']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        kind: j['kind']?.toString() ?? '',
+        region: j['region']?.toString() ?? '',
+      );
+}
+
+/// 시간표 화면에서 고른 학교 / 학년 / 반 (+ 불러온 학급·시간표)을 보관합니다.
+/// - 메모리(static)에 두어 화면을 나갔다 와도 바로 복원되고,
+/// - 기기(shared_preferences)에도 저장해 앱을 완전히 종료했다 켜도 학교·학급이 유지됩니다.
+class _SavedSelection {
+  static _NeisSchool? school;
+  static String? grade;
+  static String? className;
+
+  // 메모리 전용 캐시 (앱 종료 시 사라짐)
+  static Map<String, List<String>>? classesByGrade;
+  static Map<String, Map<int, String>>? timetable;
+  static DateTime? timetableMonday;
+
+  static bool ready = false; // 기기에서 읽기를 끝냈는지
+  static Future<void>? _loading;
+
+  static const _kSchool = 'tt_school';
+  static const _kGrade = 'tt_grade';
+  static const _kClass = 'tt_class';
+
+  static Future<void> loadFromDisk() => _loading ??= _read();
+
+  static Future<void> _read() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kSchool);
+      if (raw != null) {
+        school = _NeisSchool.fromStorage(
+          Map<String, dynamic>.from(jsonDecode(raw) as Map),
+        );
+        grade = prefs.getString(_kGrade);
+        className = prefs.getString(_kClass);
+      }
+    } catch (e) {
+      debugPrint('저장된 시간표 선택을 읽지 못했습니다: $e');
+    }
+    ready = true;
+  }
+
+  static Future<void> saveToDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final sc = school;
+      if (sc == null) {
+        await prefs.remove(_kSchool);
+      } else {
+        await prefs.setString(_kSchool, jsonEncode(sc.toStorage()));
+      }
+      final g = grade, c = className;
+      if (g == null) {
+        await prefs.remove(_kGrade);
+      } else {
+        await prefs.setString(_kGrade, g);
+      }
+      if (c == null) {
+        await prefs.remove(_kClass);
+      } else {
+        await prefs.setString(_kClass, c);
+      }
+    } catch (e) {
+      debugPrint('시간표 선택을 저장하지 못했습니다: $e');
+    }
+  }
 }
 
 /// '서울특별시' → '서울', '충청북도' → '충북' 처럼 줄여서 표시
@@ -851,6 +1194,7 @@ class _time_tableState extends State<time_table> {
   int _reqId = 0;
 
   late DateTime _monday; // 표시할 주의 월요일
+  bool _restoring = false; // 저장된 선택을 기기에서 읽는 중인지
 
   @override
   void initState() {
@@ -859,6 +1203,56 @@ class _time_tableState extends State<time_table> {
     // 토/일요일에는 다음 주 시간표를 보여줌
     final shift = n.weekday >= DateTime.saturday ? 7 : 0;
     _monday = DateTime(n.year, n.month, n.day - (n.weekday - 1) + shift);
+
+    // 화면을 나갔다 돌아왔을 때 이전 선택(학교·학급·시간표)을 복원
+    if (_SavedSelection.ready) {
+      _applySaved(); // 이미 메모리에 있으면 깜빡임 없이 바로 복원
+      // 첫 화면이 그려진 뒤에 부족한 부분(학급 목록/시간표)을 불러옴
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _continueAfterRestore();
+      });
+    } else {
+      _restoring = true;
+      _restoreFromDisk();
+    }
+  }
+
+  Future<void> _restoreFromDisk() async {
+    await _SavedSelection.loadFromDisk();
+    if (!mounted) return;
+    setState(() {
+      _applySaved();
+      _restoring = false;
+    });
+    _continueAfterRestore();
+  }
+
+  // 저장된 값을 화면 상태에 반영 (setState 없이 값만 채움)
+  void _applySaved() {
+    final school = _SavedSelection.school;
+    if (school == null) return;
+    _school = school;
+    _grade = _SavedSelection.grade;
+    _className = _SavedSelection.className;
+    _classesByGrade = _SavedSelection.classesByGrade ?? {};
+    // 같은 주의 시간표를 이미 불러온 적이 있으면 그대로 사용
+    if (_SavedSelection.timetableMonday == _monday) {
+      _timetable = _SavedSelection.timetable;
+    }
+  }
+
+  // 복원 후 비어 있는 부분(학급 목록, 시간표)만 다시 불러옴
+  Future<void> _continueAfterRestore() async {
+    final school = _school;
+    if (school == null) return;
+    if (_classesByGrade.isEmpty) {
+      setState(() => _classLoading = true);
+      await _loadClasses(school);
+      if (!mounted) return;
+    }
+    if (_grade != null && _className != null && _timetable == null) {
+      _loadTimetable();
+    }
   }
 
   List<String> get _grades {
@@ -888,6 +1282,13 @@ class _time_tableState extends State<time_table> {
       _classLoading = true;
       _classError = null;
     });
+    _SavedSelection.school = school;
+    _SavedSelection.grade = null;
+    _SavedSelection.className = null;
+    _SavedSelection.classesByGrade = null;
+    _SavedSelection.timetable = null;
+    _SavedSelection.timetableMonday = null;
+    _SavedSelection.saveToDisk();
     await _loadClasses(school);
   }
 
@@ -917,6 +1318,7 @@ class _time_tableState extends State<time_table> {
         _classError =
             grouped.isEmpty ? '학급 정보를 찾을 수 없습니다.' : null;
       });
+      _SavedSelection.classesByGrade = _classesByGrade;
     } on _NeisException catch (e) {
       if (!mounted || _school != school) return;
       setState(() {
@@ -942,11 +1344,16 @@ class _time_tableState extends State<time_table> {
         _className = null;
       }
     });
+    _SavedSelection.grade = _grade;
+    _SavedSelection.className = _className;
+    _SavedSelection.saveToDisk();
     _loadTimetable();
   }
 
   void _onClassChanged(String? c) {
     setState(() => _className = c);
+    _SavedSelection.className = _className;
+    _SavedSelection.saveToDisk();
     _loadTimetable();
   }
 
@@ -1016,6 +1423,8 @@ class _time_tableState extends State<time_table> {
         _timetable = data;
         _ttLoading = false;
       });
+      _SavedSelection.timetable = data;
+      _SavedSelection.timetableMonday = _monday;
     } on _NeisException catch (e) {
       if (!mounted || id != _reqId) return;
       setState(() {
@@ -1042,9 +1451,11 @@ class _time_tableState extends State<time_table> {
       child: Scaffold(
         appBar: const notification_bar(),
         bottomNavigationBar: const bottom_bar(),
-        body: _searching
-            ? _SchoolSearchPanel(onSelected: _selectSchool)
-            : _buildMain(),
+        body: _restoring
+            ? const Center(child: CircularProgressIndicator())
+            : _searching
+                ? _SchoolSearchPanel(onSelected: _selectSchool)
+                : _buildMain(),
       ),
     );
   }
